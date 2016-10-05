@@ -55,7 +55,7 @@ def parse_spks_and_LFP(cell_dict, days, blocks, mc_indicator, bef=1.5, aft=1., a
         for ib, b in enumerate(blocks[i_d]):
             loaded = False
             fx = 0
-            t = load_files.load(b, day, subj=animal, include_hdfstuff=True)
+            t = load_files.load(b, day, animal=animal, include_hdfstuff=True)
 
             if t is not None:
                 if animal=='grom':
@@ -109,11 +109,9 @@ def parse_spks_and_LFP(cell_dict, days, blocks, mc_indicator, bef=1.5, aft=1., a
                                 print 'No channel 74 in ', day, b
 
                     elif animal == 'cart':
-                        #Make sure there are 124 cahnnels: 
+                        #Make sure there are 256 channels: 
                         go_ix_ = np.argmin(np.abs(spk['ad124_ts'] - go_))
-
-                        if tmp[1] == 256:
-                            lfp_dict[b, day][cnt, :] = spk['ad124'][go_ix_ - (bef*1000): go_ix_ + (aft*1000)] 
+                        lfp_dict[b, day][cnt, :] = spk['ad124'][go_ix_ - (bef*1000): go_ix_ + (aft*1000)] 
 
 
                 #Spike times, LFP times
@@ -174,7 +172,8 @@ def get_go_times_cart(t, mci):
     rew_hdf_ix = np.array([i['time'] for i in hdf.root.task_msgs[:] if i['msg'] == 'reward'])
     if int(mci) == 1:
         #Manual control
-        go_ix = np.array([hdf.root.task_msgs[i-3]['time'] for i, j in enumerate(hdf.root.task_msgs[:]) if j['msg'] == 'reward'])
+        #ix_valid must be > 3
+        go_ix = np.array([hdf.root.task_msgs[i-3]['time'] for i, j in enumerate(hdf.root.task_msgs[:]) if np.logical_and(i >=3, j['msg'] == 'reward')])
         reach_targ_loc = hdf.root.task[go_ix.astype(int)+8]['target']
         reach_targ_ang = np.array([math.atan2(y,x) for i, (x, y) in enumerate(reach_targ_loc[:, [0, 2]])])
         
@@ -184,13 +183,15 @@ def get_go_times_cart(t, mci):
         lfp_lab = map_dict[lfp_lab_ix, 0]
 
         rt_dict = []
+        print 'cart: go_ix shape: ', go_ix.shape, reach_targ_ang.shape, lfp_lab_ix.shape, lfp_lab.shape
     else:
         #BMI
-        go_ix = np.array([hdf.root.task_msgs[i-2]['time'] for i, j in enumerate(hdf.root.task_msgs[:]) if j['msg'] == 'reward'])
-        lfp_targ_ix = np.array([hdf.root.task_msgs[i-2]['time'] for i, j in enumerate(hdf.root.task_msgs[:]) if j['msg'] == 'mc_target'])
-        lfp_targ = hdf.root.task[lfp_targ_ix.astype(int)]['lfp_target'][:, 2]
+        go_ix = np.array([hdf.root.task_msgs[i-2]['time'] for i, j in enumerate(hdf.root.task_msgs[:]) if np.logical_and(i >=3, j['msg'] == 'reward')])
+        #lfp_targ_ix = np.array([hdf.root.task_msgs[i-2]['time'] for i, j in enumerate(hdf.root.task_msgs[3:]) if j['msg'] == 'mc_target'])
+        lfp_targ = hdf.root.task[(go_ix-8).astype(int)]['lfp_target'][:, 2]
         lfp_lab = ((lfp_targ + 4.875)/4.875)+84
         rt_dict = []
+        print 'cart: go_ix shape: ', go_ix.shape, lfp_targ.shape, lfp_lab.shape
 
     trl_cnt = len(go_ix)
     lfp_offset = 0

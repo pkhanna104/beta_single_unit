@@ -8,9 +8,12 @@ import tables
 
 extensions = ['resort_all_all', 'resort_all_sub_all', 'resort_all']
 master_save_directory = '/Volumes/My Book/pk/resorted_grom2015_mat'
-cart_save_directory = '/Volumes/My Book/pk/cart_2015'
+#cart_save_directory = '/Volumes/My Book/pk/cart_2015'
+cart_save_directory = '/media/lab/My Book/pk/cart_2015'
 
-def load(block, day, subj='grom',return_name_only=False, include_hdfstuff=False):
+
+def load(block, day, animal='grom',return_name_only=False, include_hdfstuff=False):
+    subj = animal
     if subj == 'grom':
         print 'processing grom data: ', block, day
         loaded = False
@@ -156,8 +159,13 @@ def plx_to_dict_format(plx):
                 wf[sig] = [plx_wf[it, :]]
 
     #Add LFP channel:
-    spk['ad124'] = plx.lfp[:].data[:, 124]
-    spk['ad124_ts'] = plx.lfp[:].time
+    #Make sure there are 256 channels: 
+    tmp = plx.lfp[:.1].data
+    if tmp.shape[1] == 256:
+        spk['ad124'] = plx.lfp[:].data[:, 124]
+        spk['ad124_ts'] = plx.lfp[:].time
+    else:
+        raise
 
     for k in wf.keys():
         wf[k] = np.vstack((wf[k]))

@@ -23,11 +23,9 @@ import scipy.signal
 import scipy.stats
 import statsmodels.api as sm
 import matplotlib.pyplot as plt
-import psycho_metrics as pm
 import state_space_spks as sss
 import state_space_cart as sssc
 import state_space_w_beta_bursts as ssbb
-import spectral_metrics as sm
 import load_files
 import pickle
 import sklearn.lda
@@ -45,11 +43,10 @@ import datetime
 import un2key
 import re
 import scipy.io as sio
-import kinarm
 import scipy.signal
 import sav_gol_filt as sg_filt
 from scipy import ndimage
-import fcns
+#import fcns
 
 import seaborn
 seaborn.set(font='Arial',context='talk',font_scale=1.5,style='whitegrid')
@@ -64,7 +61,7 @@ bp_filt = ssbb.master_beta_filt
 # cmap = ['darkcyan', 'royalblue', 'gold', 'orangered']
 
 def get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth=-1, animal='grom'):
-
+    signal_type = 'shenoy_jt_vel' #Used to get full endpt hand pos and hand vel: 
     kin_signal = dict()
     binned_kin_signal = dict()
     bin_kin_signal = dict()
@@ -81,11 +78,14 @@ def get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth=-1, 
 
             #Cursor trajectory: 
             if animal == 'grom':
+                import psycho_metrics as pm
+                import spectral_metrics as sm
                 fname = load_files.load(b, day, return_name_only=True)
                 kw = dict(target_coding='standard', fnames = [fname], all_kins=True)
 
                 try:
-                    signal_type = 'shenoy_jt_vel' #Used to get full endpt hand pos and hand vel: 
+                    
+                    #kin_sig is signal2 in sm.get_sig and is [ xpos, ypos, xvel, yvel, speed] and is metric x trials x time
                     proj_vel, kin_sig, targ_dir = sm.get_sig([day], [[b]], go_cue_times_lfp, [len(go_cue_times_lfp)], 
                         signal_type=signal_type, mc_lab = labs, prep=True, anim = 'grom', **kw)
                     kin_feats = pm.kin_feat = pm.get_kin_sig_shenoy(proj_vel) #Kin 
@@ -95,32 +95,8 @@ def get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth=-1, 
                     print 'No AD33 key in ', day, b
 
             elif animal == 'cart':
-                t = load_files.load(b, day, animal='cart', include_hdfstuff=True)
-                hdf = t['hdf']
-                ts_func = t['ts_func']
-
-                #Transform LFP marker into HDF rows: 
-                go_cue_times_lfp_hdf_ix = ts_func(go_cue_times_lfp, 'hdf')
-
-                #Must resample data to be 1000 Hz
-                for ig, go_ in enumerate(go_cue_times_lfp_hdf_ix):
-                    cursor = hdf.root.task[go_-(500.*(60./1000)):go_+(1500.*(60./1000))]['cursor'][:,[0,2]]
-                    curs_b = np.arange(-500,1500,1000./60.)
-                    vel = np.diff(cursor,axis=0)/(1000/60.)
-                    filt_vel = sg_filt.savgol_filter(vel, 9, 5, axis=0)
-                    vel_bins = curs_b[:-1] + 0.5*(curs_b[1] - curs_b[0])
-
-                    targ = hdf.root.task[go_+8]['target'][[0, 2]]
-                    assert not np.all(targ==0.) #Target 
-                    mc_vect = targ/np.linalg.norm(targ)
-                    mc_vect_mat = np.tile(mc_vect[np.newaxis,:], (filt_vel.shape[0], 1))
-
-                    #Now get kin_sig, kin_feat
-                    KIN_SIG = np.sum(np.multiply(mc_vect_mat, filt_vel), axis=1)
-                    start_bin = int(np.argmin(np.abs(curs_b)) - 300*(60/1000.)) #start bin is 300 ms before go cue
-                    kin_feat = pm.get_kin_sig_shenoy(KIN_SIG[np.newaxis], bins=vel_bins, start_bin=start_bin,
-                        first_local_max_method=True)
-                    rt = kin_feat[0,2]
+                kin_sig = get_cart_kin(b, day, go_cue_times_lfp, bef, aft)
+                rt = np.zeros((kin_sig.shape[1]))
 
             #Smooth signal: 
             if smooth > 0:  
@@ -134,7 +110,7 @@ def get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth=-1, 
                     Y = Y[:, :, np.newaxis]
                 elif signal_type == 'shenoy_jt_vel':
 
-                    for j in [2, 3]:
+                    for j in [2, 3]: #Xvel, Yvel
                         tmp2 = []
                         for i in range(len(labs)): tmp2.append(np.convolve(window, kin_sig[j, i,:], mode='same'))
                         tmp.append(tmp2)
@@ -181,6 +157,45 @@ def get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth=-1, 
                 raise Exception
 
     return kin_signal, binned_kin_signal, bin_kin_signal, binned_rt
+
+def get_cart_kin(block, day, go_cue_times_lfp, bef, aft):
+    ''' Must return kin_sig, rt where kin_sig is a 5 x nbins matrix'''
+
+    t = load_files.load(block, day, animal='cart', include_hdfstuff=True)
+    hdf = t['hdf']
+    ts_func = t['ts_func']
+
+    #Transform LFP marker into HDF rows: 
+    go_cue_times_lfp_hdf_ix = ts_func(go_cue_times_lfp, 'hdf')
+
+    KIN_SIG = []
+
+    #Must resample data to be 1000 Hz
+    for ig, go_ in enumerate(go_cue_times_lfp_hdf_ix):
+
+        #In cm
+        cursor = hdf.root.task[int(go_-((bef+1)*60)):int(go_+((aft+1)*60.))]['cursor'][:,[0,2]]
+        c_filt_long = scipy.signal.resample_poly(cursor, 1000, 60, axis=0)
+        c_filt = c_filt_long[1000:-1000,:]
+        c_filt_bins = np.arange(-1*bef,aft,1./1000.) #bins in ms
+
+        #In cm / sec
+        vel = np.diff(cursor,axis=0)/(1./60.)
+        vel = np.vstack(( vel[0, :], vel))
+        filt_vel = sg_filt.savgol_filter(vel, 9, 5, axis=0)
+        v_filt_long = scipy.signal.resample_poly(filt_vel, 1000, 60, axis=0)
+        v_filt = v_filt_long[1000:-1000,:]
+        
+        spd = np.sqrt(v_filt[:,0]**2 + v_filt[:, 1]**2)
+
+        sub_kin_sig = np.vstack((c_filt.T, v_filt.T, spd[np.newaxis, :]))
+
+        KIN_SIG.append(sub_kin_sig)
+
+    kin_sig = np.dstack((KIN_SIG))
+    #Yield metric x trial x time
+    return np.swapaxes(kin_sig, 1, 2)
+
 
 def get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_only=False, kin_type='endpt'):
 
@@ -432,7 +447,7 @@ def get_full_blocks(keep_dict, days, blocks, mc_indicator, mc_only=True, kin_typ
     kin_dict = {}
     beta_dict = {}
     hold_dict = {}
-
+    import kinarm
     kinarm_params = sio.loadmat('/Users/preeyakhanna/Dropbox/Carmena_Lab/lfp_multitask/analysis/KinematicsParameters_seba.mat')
     kinarm_calib = kinarm.calib(kinarm_params['sho_pos_x'][0,0], kinarm_params['sho_pos_y'][0,0], 
         kinarm_params['L1'][0,0], kinarm_params['L2'][0,0], kinarm_params['L2ptr'][0,0])
@@ -1000,9 +1015,9 @@ def get_sets(arr):
 
 def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal, Params):
     # keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test)
-    # B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
-    #     beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=binsize)
-    #kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth = 50)
+    B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
+        beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=binsize)
+    kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth = 50)
     cmap = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
 
     f, ax = plt.subplots(figsize=(5, 4))

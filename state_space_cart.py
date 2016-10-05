@@ -17,7 +17,7 @@ for i in range(NUM_COLORS):
 test_days = ['011315']
 master_days = ['011315','011415', '011515','011515']
 
-test_blocks = ['abc']
+test_blocks = ['ac']
 master_blocks = ['abc', 'abc', 'abc','abcd'] 
 master_blocks_te= [[6291, 6294, 6295], [6297, 6298, 6299 ], [6302, 6303, 6304], [6305, 6306, 6307, 6308]]
 
@@ -29,7 +29,7 @@ master_blocks_te= [[6291, 6294, 6295], [6297, 6298, 6299 ], [6302, 6303, 6304], 
 
 
 
-test_mc_indicator = ['100']
+test_mc_indicator = ['10']
 master_mc_indicator =  ['100', '100', '100', '1000']
 
 # Master cell list for sorted files: 
@@ -105,19 +105,21 @@ def get_cells(plot=True, days=None, blocks=None, mc_indicator=None, test=False):
 
         for ib, b in enumerate(blocks[i_d]):
 
-            spk = load_files.load(b, d, subj='cart')
+            spk = load_files.load(b, d, animal='cart')
             
             if spk is not None:
                 for ig, gc in enumerate(good_cell_list):
                     key = gc
                     if key in spk.keys():
 
+
                         #Time stamps for LFP in secs --> ms
                         secs = spk['ad124_ts']
-                        axi = ax[ig/y, ig%y]
-                        axi2 = ax2[ig/y, ig%y]
+                     
 
                         if plot:
+                            axi = ax[ig/y, ig%y]
+                            axi2 = ax2[ig/y, ig%y]
                             mn = np.mean(spk['wf_dict'][key], axis=0)
                             axi.plot(mn, color=cmap[ib])
                             sem = np.std(spk[key], axis=0)/float(np.sqrt(spk[key].shape[0]))

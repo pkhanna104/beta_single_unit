@@ -81,7 +81,7 @@ def get_beta_bursts(keep_dict, days, blocks, mc_indicator, perc_beta=60, bp_filt
     return spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_dict_cont, bef, aft, go_times_dict
 
 def bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, beta_dict_cont, bef, aft, 
-    smooth=-1, beta_amp_smooth=-1, binsize=20):
+    smooth=-1, beta_amp_smooth=-1, binsize=20, animal='grom'):
     '''
     Analyze decoding on a day by day basis
 
@@ -120,7 +120,10 @@ def bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta
 
             for un_ in sorted_un:
                 #Convert: 
-                un = un2key.convert(un_)
+                if animal=='grom':
+                    un = un2key.convert(un_)
+                elif animal == 'cart':
+                    un = un_
                 try:
                     mini_spk_arr.append(spk_dict[b, d][un])
                 except:
