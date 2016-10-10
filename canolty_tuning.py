@@ -6,12 +6,9 @@ import tables
 import numpy as np
 import scipy.signal
 import scipy.stats
-import statsmodels.api as sm
 import matplotlib.pyplot as plt
-import psycho_metrics as pm
 import state_space_spks as sss
 import state_space_w_beta_bursts as ssbb
-import spectral_metrics as sm
 import load_files
 import pickle
 
@@ -26,7 +23,6 @@ import multiprocessing as mp
 import datetime
 import predict_kin_w_spk
 import math
-import pyvttbl as pt
 from collections import namedtuple
 
 import seaborn
