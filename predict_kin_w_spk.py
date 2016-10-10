@@ -152,7 +152,11 @@ def get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth=-1, 
                 if signal_type in ['endpt', 'shenoy_jt_vel']:
                     spd = np.sqrt(np.sum(Y_down[:, [2, 3], :]**2, axis=1))
                     bin_kin_signal[b, day] = np.zeros_like(spd)
-                    bin_kin_signal[b, day][spd >= (3.5/100.)] = 1
+                    if animal == 'grom':
+                        bin_kin_signal[b, day][spd >= (3.5/100.)] = 1
+                    elif animal == 'cart':
+                        #Already in CM / sec. boom. 
+                        bin_kin_signal[b, day][spd >= (3.5)] = 1
             else:
                 raise Exception
 
@@ -172,23 +176,47 @@ def get_cart_kin(block, day, go_cue_times_lfp, bef, aft):
 
     #Must resample data to be 1000 Hz
     for ig, go_ in enumerate(go_cue_times_lfp_hdf_ix):
+        #Figure out hdf ix for trial and corresponding time stamps: 
+        #lfp = go_cue_times_lfp[ig]
+        #hdf_start = ts_func(np.array([lfp - bef]), 'hdf')
+        #hdf_end = ts_func(np.array([lfp + aft]), 'hdf')
+        hdf_ix = np.arange(go_ - 90, go_+60)
+        lfp_ix = (1000*ts_func(hdf_ix, 'plx')).astype(int)
+        lfp_ix = lfp_ix - lfp_ix[0]
+        cursor_init = np.zeros((2500, 2))
+        for i, hdfi in enumerate(hdf_ix):
+            if i == len(lfp_ix)-1:
+                cursor_init[lfp_ix[i]:] = hdf.root.task[hdfi]['cursor'][[0, 2]]
+            else:
+                cursor_init[lfp_ix[i]:lfp_ix[i+1],:] = hdf.root.task[hdfi]['cursor'][[0, 2]]
+
 
         #In cm
-        cursor = hdf.root.task[int(go_-((bef+1)*60)):int(go_+((aft+1)*60.))]['cursor'][:,[0,2]]
-        c_filt_long = scipy.signal.resample_poly(cursor, 1000, 60, axis=0)
-        c_filt = c_filt_long[1000:-1000,:]
-        c_filt_bins = np.arange(-1*bef,aft,1./1000.) #bins in ms
+        #cursor = hdf.root.task[int(go_-((bef+1)*60)):int(go_+((aft+1)*60.))]['cursor'][:,[0,2]]
+        cursor2 = hdf.root.task[int(go_-((bef)*60)):int(go_+((aft)*60.))]['cursor'][:,[0,2]]
+        
+        # c_filt_long = scipy.signal.resample_poly(cursor, 1000, 60, axis=0)
+        # c_filt = c_filt_long[1000:-1000,:]
+        # c_filt_bins = np.arange(-1*bef,aft,1./1000.) #bins in ms
 
         #In cm / sec
-        vel = np.diff(cursor,axis=0)/(1./60.)
-        vel = np.vstack(( vel[0, :], vel))
-        filt_vel = sg_filt.savgol_filter(vel, 9, 5, axis=0)
-        v_filt_long = scipy.signal.resample_poly(filt_vel, 1000, 60, axis=0)
-        v_filt = v_filt_long[1000:-1000,:]
-        
-        spd = np.sqrt(v_filt[:,0]**2 + v_filt[:, 1]**2)
+        vel = np.diff(cursor2,axis=0)/(1./60.)
+        vel_init = np.zeros((2500, 2))
+        for i, hdfi in enumerate(hdf_ix):
+            if i == len(lfp_ix)-1:
+                vel_init[lfp_ix[i]:] = vel[i-1,:]
+            else:
+                vel_init[lfp_ix[i]:lfp_ix[i+1],:] = vel[i,:]
 
-        sub_kin_sig = np.vstack((c_filt.T, v_filt.T, spd[np.newaxis, :]))
+        # vel = np.diff(cursor,axis=0)/(1./60.)
+        # vel = np.vstack(( vel[0, :], vel))
+        # filt_vel = sg_filt.savgol_filter(vel, 9, 5, axis=0)
+        # v_filt_long = scipy.signal.resample_poly(filt_vel, 1000, 60, axis=0)
+        # v_filt = v_filt_long[1000:-1000,:]
+        
+        spd = np.sqrt(vel_init[:,0]**2 + vel_init[:, 1]**2)
+
+        sub_kin_sig = np.vstack((cursor_init.T, vel_init.T, spd[np.newaxis, :]))
 
         KIN_SIG.append(sub_kin_sig)
 
@@ -197,7 +225,7 @@ def get_cart_kin(block, day, go_cue_times_lfp, bef, aft):
     return np.swapaxes(kin_sig, 1, 2)
 
 
-def get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_only=False, kin_type='endpt'):
+def get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_only=False, kin_type='endpt', animal='grom'):
 
     ''' Goal is to use entire MC file (not just trial epochs) to train decoder'''
 
@@ -210,7 +238,11 @@ def get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_o
     Pred_Kin_lpf = {}
     
     decoder_dict = {}
-    spk_dict, lfp_dict, beta_dict, kin_dict, hold_dict = get_full_blocks(keep_dict, days, blocks, mc_indicator, kin_type=kin_type)
+    print animal
+    if animal == 'grom':
+        spk_dict, lfp_dict, beta_dict, kin_dict, hold_dict = get_full_blocks(keep_dict, days, blocks, mc_indicator, kin_type=kin_type)
+    elif animal == 'cart':
+        spk_dict, lfp_dict, beta_dict, kin_dict, hold_dict = get_full_blocks_cart(keep_dict, days, blocks, mc_indicator, kin_type=kin_type)
 
 
     mc_blocks = []
@@ -437,6 +469,121 @@ def bin_(x, binsize, mode='cnts'):
             x_.append(_tmp)
         x_binned.append(x_)
     return np.vstack((x_binned)).T
+
+
+def get_full_blocks_cart(keep_dict, days, blocks, mc_indicator, mc_only=True, kin_type='endpt', decoder=None):
+    #Make sure same number of blocks / days etc.
+    assert len(days) == len(blocks) == len(keep_dict.keys())    
+    spk_dict = {} #Spikes dict
+    lfp_dict = {} #LFP dict
+    kin_dict = {}
+    beta_dict = {}
+    hold_dict = {}
+
+    for i_d, day in enumerate(days):
+        if mc_only == True:
+            ix = np.array([m.start() for m in re.finditer('1', mc_indicator[i_d])])
+        else:
+            ix = np.arange(len(mc_indicator[i_d]))
+
+        units = ['a', 'b', 'c', 'd']
+        cell_list = keep_dict[day]
+
+        #For each block:
+        for i_b in ix:
+            loaded = False
+            t = load_files.load(blocks[i_d][i_b], day, animal='cart', include_hdfstuff=True)
+
+            if t is not None:
+
+                spk = t #Copy loaded file to a more attractive name ;) 
+                keys = spk.keys()
+                spk_keys = cell_list
+
+                #Get time delays 
+                lfp_offset = 0.
+
+                hdf = spk['hdf']
+                hdf_lims = np.array([0, len(hdf.root.task)-1])
+                ts_func = spk['ts_func']
+                plx_lims = ts_func(hdf_lims, 'plx') 
+
+                cursor_init = np.zeros((int(plx_lims[-1]*1000) - int(plx_lims[0]*1000), 2))
+                hdf_ts = (1000*ts_func(np.arange(0, len(hdf.root.task)), 'plx')).astype(int)
+                hdf_ts = hdf_ts - hdf_ts[0]
+
+                #Make sure no strobed events occur before:
+                #assert np.all(strobed[:,0] - lfp_offset > 0.)
+
+                #Make sure length of AD channel is > last event - offset: 
+                #assert (len(t[ts_key[:-3]])/1000.) > (strobed[-1, 0] - lfp_offset)
+
+
+
+                spk_dict[blocks[i_d][i_b], day] = dict()
+
+                for un in spk_keys:
+                        
+                    if np.any(np.array(spk[un].shape) > 1):
+                        ts_arr = np.squeeze(spk[un])
+                    else:
+                        ts_arr = spk[un]
+
+                    #good_ts_arr = np.nonzero(np.logical_and(ts_arr>plx_lims[0], ts_arr<plx_lims[1]))
+
+                    #Spikes
+                    spk_dict[blocks[i_d][i_b], day][un] = bin1ms_full(ts_arr, plx_lims[0], plx_lims[1])
+
+                #LFPs
+                lfp_dict[blocks[i_d][i_b], day] = spk['ad124']
+                perc_beta=60
+                min_beta_burst_len = 100
+
+                nyq = 0.5* 1000
+                bw_b, bw_a = scipy.signal.butter(5, [bp_filt[0]/nyq, bp_filt[1]/nyq], btype='band')
+                data_filt = scipy.signal.filtfilt(bw_b, bw_a, lfp_dict[blocks[i_d][i_b], day])
+                
+                sig = np.abs(scipy.signal.hilbert(data_filt, N=None))
+                sig_bin = np.zeros_like(sig)
+                sig_bin[sig > np.percentile(sig.reshape(-1), perc_beta)] = 1
+
+                #Get only blobs >= 50 ms: 
+                #see http://stackoverflow.com/questions/28274091/removing-completely-isolated-cells-from-python-array
+                sig_bin_filt = np.zeros((3, len(sig_bin)))
+                sig_bin_filt[1,:] = sig_bin.copy()
+                struct = np.zeros((3,3))
+                struct[1,:] = 1 #Get patterns that only are horizontal
+                id_regions, num_ids = ndimage.label(sig_bin_filt, structure=struct)
+                id_sizes = np.array(ndimage.sum(sig_bin, id_regions, range(num_ids + 1)))
+                area_mask = (id_sizes <= min_beta_burst_len )
+                sig_bin_filt[area_mask[id_regions]] = 0
+                beta_dict[blocks[i_d][i_b], day] = sig_bin_filt
+
+                #Get cart kin: 
+                #In cm
+                cursor = hdf.root.task[:]['cursor'][:,[0,2]]
+
+                assert hdf_ts.shape[0] == cursor.shape[0]
+
+                for it, ts in enumerate(hdf_ts[:-1]): cursor_init[ts:hdf_ts[it+1], :] = cursor[it,:]
+                c_filt = cursor_init
+                #c_filt = scipy.signal.resample_poly(cursor, 1000, 60, axis=0)
+                xpos = c_filt[:, 0]
+                ypos = c_filt[:, 1]
+                #In cm / sec
+                vel = np.diff(cursor,axis=0)/(1./60.)
+                vel_init = np.zeros_like(cursor_init)
+                for it, ts in enumerate(hdf_ts[:-1]): vel_init[ts:hdf_ts[it+1], :] = vel[it,:]
+                filt_vel = sg_filt.savgol_filter(vel_init, 81, 5, axis=0)
+                #v_filt = scipy.signal.resample_poly(filt_vel, 1000, 60, axis=0)
+                xvel = filt_vel[:, 0]
+                yvel = filt_vel[:, 1]
+
+                kin_dict[blocks[i_d][i_b], day] = np.hstack((xpos[:, np.newaxis], ypos[:, np.newaxis], 
+                    xvel[:, np.newaxis], yvel[:, np.newaxis]))
+                
+                hold_dict = {}
+    return spk_dict, lfp_dict, beta_dict, kin_dict, hold_dict
 
 def get_full_blocks(keep_dict, days, blocks, mc_indicator, mc_only=True, kin_type='endpt', decoder=None):
     #Make sure same number of blocks / days etc.
@@ -1014,10 +1161,11 @@ def get_sets(arr):
 
 
 def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal, Params):
-    # keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test)
+    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, animal='cart')
     B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
-        beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=binsize)
-    kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth = 50)
+        beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=binsize, animal='cart')
+    kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, 
+        go_times_dict, lfp_lab, binsize, smooth = 50, animal='cart')
     cmap = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
 
     f, ax = plt.subplots(figsize=(5, 4))
@@ -1026,21 +1174,25 @@ def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal
         Spk_Day = S_bin[d]*binsize
         Beta_Day = B_bin[d]
         Kin_Day = []
+        Spd_Day = []
         for i_b, blk in enumerate(blocks[i_d]):
             Kin_Day.append(bin_kin_signal[blk, d])
+            spd = binned_kin_signal_dict[blk, d]
+            Spd_Day.append(np.sqrt(spd[:, 2, :]**2 +spd[:,3,:]**2 ))
         Kin_Day = np.vstack((Kin_Day))
+        Spd_Day = np.vstack((Spd_Day))
         perc_same_diff = np.zeros((2, ))
 
         for iu, un in enumerate(Params[d]['sorted_un']):
             lfp_lab2 = Params[d]['day_lfp_labs']
 
             ix = np.nonzero(np.logical_and(lfp_lab2 > 80, lfp_lab2<=87))[0]
-            ix2 = np.nonzero(np.logical_or(lfp_lab2==88, lfp_lab2==64))[0] #RT PSTH changed all 64s to 88s. Oops
+            ix2 = np.nonzero(np.logical_or(lfp_lab2==88, lfp_lab2<80))[0] #RT PSTH changed all 64s to 88s. Oops
 
             spk = {}
             spk['mc'] = []
             spk['beta'] = []
-
+ 
             for t, trl in enumerate(range(ntrials)):
                 if t in ix:
                     mc_hold = np.nonzero(np.logical_and(Beta_Day[t,:] == 1, Kin_Day[t, :]==0))[0]
