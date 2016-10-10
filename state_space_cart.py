@@ -15,9 +15,9 @@ for i in range(NUM_COLORS):
     cmap.append(cm(1.*i/NUM_COLORS))  # colors
 
 test_days = ['011315']
-master_days = ['011315','011415', '011515','011515']
+master_days = ['011315','011415', '011515','011615']
 
-test_blocks = ['ac']
+test_blocks = ['a']
 master_blocks = ['abc', 'abc', 'abc','abcd'] 
 master_blocks_te= [[6291, 6294, 6295], [6297, 6298, 6299 ], [6302, 6303, 6304], [6305, 6306, 6307, 6308]]
 
@@ -29,36 +29,53 @@ master_blocks_te= [[6291, 6294, 6295], [6297, 6298, 6299 ], [6302, 6303, 6304], 
 
 
 
-test_mc_indicator = ['10']
+test_mc_indicator = ['1']
 master_mc_indicator =  ['100', '100', '100', '1000']
 
 # Master cell list for sorted files: 
 master_cell_list = dict(
-    date_011315=np.hstack([['22a', '38a', '51a', '52a', '53a', '73a', '96a', '97a', '105a', '106a', '130a', '176a', 
-    '216a', '228a', '232a', '235a', '', ],  #Good multiunit list
-    ['133a'],  #Great cell list
-    ['1a', '3a', '23a', '26a', '36a', '37a', '41a', '46a', '54a', '55a', '56a', '57a', '58a', '59a', '60a', '71a',
-    '77a', '90a','107a', '122a', '131a', '140a', '148a', '152a', '160a', '193a', '195a', '197a', '198a', '204a', 
-    '205a', '212a', '215a', '226a', '227a', '245a', '248a', '256a']]), #Multiunit list
+
+    date_011315 = np.hstack([['53a', '255b','133a', '172a','152a','9a','176a'], #good
+        ['106a', '130a', '132a', '235a', '131a', '245a', '52a', '242a', '32a',
+        '234a', '201a']]), #ok
+    
+    date_011415 = np.hstack([[ '255b', '133a', '172a', '9a', '152a', '176a'], #good
+        ['195a', '109a', '131a', '53a', '52a', '106a', '130a', '29a', '106a', 
+        '173a', '32a', '102a', ]]), #ok 
+
+    date_011515 = np.hstack([['53a', '255b', '201a', '133a', '172a', '9a', '152a'], #good
+        ['131a', '29a', '106a', '130a', '52a', '173a', '176a', '32a', '215a', '201a', 
+        '134a', '176a']]), #ok
+
+    date_011615 = np.hstack([[ '53a', '255b','133a','152a',], #good
+        ['106a','176a', '130a', '216a', '52a', '235a', '47a']]), 
+    )
+
+# old_date_011315=np.hstack([['22a', '38a', '51a', '52a', '53a', '73a', '96a', '97a', '105a', '106a', '130a', '176a', 
+# '216a', '228a', '232a', '235a', '', ],  #Good multiunit list
+# ['133a'],  #Great cell list
+# ['1a', '3a', '23a', '26a', '36a', '37a', '41a', '46a', '54a', '55a', '56a', '57a', '58a', '59a', '60a', '71a',
+# '77a', '90a','107a', '122a', '131a', '140a', '148a', '152a', '160a', '193a', '195a', '197a', '198a', '204a', 
+# '205a', '212a', '215a', '226a', '227a', '245a', '248a', '256a']]) #Multiunit list
 
 
-    date_011415=np.hstack([['22a', '215a', '228a', '235a'],  #Good cell list
-    [''],  #Great cell list
-    ['3a', '26a', '36a', '37a', '38a', '41a', '46a', '51a', '52a', '53a',
-    '57a', '58a', '59a', '61a', '62a', '63a', '64a', '73a', '96a', '97a', 
-    '102a', '105a', '107a', '109a', '129a', '130a', '131a', '132a', '133a', 
-    '134a', '139a', '140a', '144a', '148a', '149a', '151a', '158a', '172a', 
-    '195a', '198a', '204a', '207a', '211a', '216a', '227a', '230a', '233a', 
-    '234a', '242a', '245a', '248a']]), #Multiunit list
+# old_date_011415=np.hstack([['22a', '215a', '228a', '235a'],  #Good cell list
+# [''],  #Great cell list
+# ['3a', '26a', '36a', '37a', '38a', '41a', '46a', '51a', '52a', '53a',
+# '57a', '58a', '59a', '61a', '62a', '63a', '64a', '73a', '96a', '97a', 
+# '102a', '105a', '107a', '109a', '129a', '130a', '131a', '132a', '133a', 
+# '134a', '139a', '140a', '144a', '148a', '149a', '151a', '158a', '172a', 
+# '195a', '198a', '204a', '207a', '211a', '216a', '227a', '230a', '233a', 
+# '234a', '242a', '245a', '248a']]) #Multiunit list
 
 
-    date_011515=np.hstack([[],  #Good cell list
-    ['13a'],  #Great cell list
-    ['1a', ]]), #Multiunit list
+    # date_011515=np.hstack([[],  #Good cell list
+    # ['13a'],  #Great cell list
+    # ['1a', ]]), #Multiunit list
 
-    date_011615=np.hstack([[],  #Good cell list
-    ['13a'],  #Great cell list
-    ['1a', ]]), #Multiunit list 
+    # date_011615=np.hstack([[],  #Good cell list
+    # ['13a'],  #Great cell list
+    # ['1a', ]]), #Multiunit list 
     )
 #Timing splits:
 #1_13_15, split a, b, c @: 307, 4219
