@@ -14,21 +14,25 @@ import datetime
 from scipy import ndimage
 import glob
 import state_space_spks as sss
+import state_space_cart as ssc
 
 def train_test_mc_decoders():
     keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=True)
     predict_kin_w_spk.get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator)
 
-def train_mc_full_test_nf_full(test=False, plot=False, day='022815'):
-    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, days=[day])
+def train_mc_full_test_nf_full(animal, test=False, plot=False, day='022815'):
+    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, days=[day], animal=animal)
     print 'decoder dict starting for ', day, ' using days: ', days
-    decoder_dict = predict_kin_w_spk.get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_only=True, kin_type='endpt')
+    decoder_dict = predict_kin_w_spk.get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_only=True, kin_type='endpt', animal=animal)
     import pickle
     pickle.dump(decoder_dict, open(day+'_decoder_dict.pkl', 'wb'))
     print 'saving decoder dict'
 
     b = 25
-    spk_dict, lfp_dict, beta_dict, kin_dict, hold_dict = predict_kin_w_spk.get_full_blocks(keep_dict, days, blocks, mc_indicator, kin_type='endpt', mc_only=False)
+    if animal=='grom':
+        spk_dict, lfp_dict, beta_dict, kin_dict, hold_dict = predict_kin_w_spk.get_full_blocks(keep_dict, days, blocks, mc_indicator, kin_type='endpt', mc_only=False)
+    elif animal=='cart':
+        spk_dict, lfp_dict, beta_dict, kin_dict, hold_dict = predict_kin_w_spk.get_full_blocks_cart(keep_dict, days, blocks, mc_indicator, kin_type='endpt', mc_only=False)
 
     #Smooth kinematics: 
     kin_smooth_len = 151
@@ -590,18 +594,23 @@ def get_beta(lfp_dat, min_beta_burst_len=100, perc_beta = 60, bp_filt=[20, 45]):
     sig_bin_filt[area_mask[id_regions]] = 0
     return sig_bin_filt
 
-def main_full_file_plt():
-    for i_d, d in enumerate(sss.master_days):
+def main_full_file_plt(animal):
+    if animal == 'grom':
+        master_days = sss.master_days
+    elif animal == 'cart':
+        master_days = [ssc.master_days[0]]
+
+    for i_d, d in enumerate(master_days):
     #for d in ['022415', '022515']:
 
         print 'starting day: ', d
-        fnames, days, mc_indicator = train_mc_full_test_nf_full(day=d)
+        fnames, days, mc_indicator = train_mc_full_test_nf_full(animal, test=True, day=d)
         try:
             #open_plot_train_mc_full_test_nf_full(fnames[0], mc_indicator[0], sss.master_blocks[i_d])
             open_plot_train_mc_full_test_nf_full(None, sss.master_mc_indicator[i_d], sss.master_blocks[i_d], day=d)
         except:
             print 'skipped plotting bc of error, relevant outputs:'
-            #print fnames, days, mc_indicator
+            print fnames, days, mc_indicator
             print d
         print 'done w/ ', d
 
@@ -810,5 +819,5 @@ def plot_train_mc_test_nf(fname):
 
 if __name__ == '__main__':
     print 'starting!'
-    main_full_file_plt()
+    main_full_file_plt('cart')
     #train_mc_test_nf_decoders()
