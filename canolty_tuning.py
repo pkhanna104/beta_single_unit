@@ -137,8 +137,8 @@ def plot_chief_results(cheif_res):
 
         
     plt.tight_layout()
-    plt.savefig('canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2_three_fourth_mc.eps', format='eps', dpi=300)
-    pickle.dump(cheif_res, open('select_cells_cheif_res_three_fourth_mc.pkl', 'wb'))
+    plt.savefig('canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2_all_cells_three_fourth_mc.eps', format='eps', dpi=300)
+    pickle.dump(cheif_res, open('all_cells_cheif_res_three_fourth_mc.pkl', 'wb'))
 
 def old_stuff():
     # Plot Amp: 
