@@ -24,24 +24,53 @@ import datetime
 import predict_kin_w_spk
 import math
 from collections import namedtuple
+import pickle
 
 import seaborn
 seaborn.set(font='Arial',context='talk',font_scale=1.2,style='white')
 
-def get_all(test):
-    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test)
+import multiprocessing as mp
+
+def get_all(test, animal, all_cells):
+    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, animal=animal, all_cells=all_cells)
 
     B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
-            beta_cont_dict, bef, aft, smooth=-1, binsize=1)
+            beta_cont_dict, bef, aft, smooth=-1, binsize=1, animal=animal)
 
-    kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, 1, smooth = 50)
+    kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, 1, smooth = 50, animal=animal)
 
     return keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator, B_bin, BC_bin, S_bin, Params, kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt
 
-def main(test=True):
-    args = get_all(test)
+def get_all_day(day):
+    # test = false, all_cells = False, 3/4 = true
+    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=False, animal='cart', all_cells=False, days=[day])
+
+    B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
+            beta_cont_dict, bef, aft, smooth=-1, binsize=1, animal=animal)
+
+    kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, 1, smooth = 50, animal=animal)
+
+    args= (keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator, B_bin, BC_bin, S_bin, Params, kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt)
+    cr = run_canolty(*args)
+    return cr[day]
+
+def main(test=True, animal='grom'):
+    args = get_all(test, animal)
     cr = run_canolty(*args)
     return cr
+
+def main_mp():
+
+    import pickle
+    pool = mp.Pool()
+    days = ['011315', '011415', '011515', '011615']
+    results = pool.map(get_all_day, days)
+    cr = {}
+    for i_d, day in enumerate(days):
+        pickle.dump(results[i_d], open('day'+'_sub_canolty_select_cells.pkl'))
+        cr[day] = results[i_d]
+
+    plot_chief_results(cr)
 
 def run_canolty(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, 
     bef, aft, go_times_dict, mc_indicator, B_bin, BC_bin, S_bin, Params, kin_signal_dict, 
@@ -99,17 +128,18 @@ def plot_chief_results(cheif_res):
             ax[ie, i].plot([-1, 1], [0, 0], '-', color='gray', linewidth=0.4)
             ax[ie, i].plot([0, 0], [-1, 1], '-', color='gray', linewidth=0.4)
             ax[ie, i].legend(loc=0,ncol=2,fontsize=14)
-            ax[ie, i].set_xlim([-0.02, .02])
-            ax[ie, i].set_ylim([-0.02, .02])
-            ax[ie, i].set_xticks([-0.005, 0.005])
-            ax[ie, i].set_yticks([-0.005, 0.005])
-            ax[ie, i].set_xticklabels(['-0.005', '0.005'])
-            ax[ie, i].set_yticklabels(['-0.005', '0.005'])
+            ax[ie, i].set_xlim([-0.005, .005])
+            ax[ie, i].set_ylim([-0.005, .005])
+            ax[ie, i].set_xticks([-0.001, 0.001])
+            ax[ie, i].set_yticks([-0.001, 0.001])
+            ax[ie, i].set_xticklabels(['-0.001', '0.001'])
+            ax[ie, i].set_yticklabels(['-0.001', '0.001'])
 
         
     plt.tight_layout()
-    #plt.savefig('/Users/preeyakhanna/Dropbox/Carmena_Lab/Documentation/NeuronPaper/JNeuroDraft/canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2.eps', format='eps', dpi=300)
-    
+    plt.savefig('canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2_three_fourth_mc.eps', format='eps', dpi=300)
+    pickle.dump(cheif_res, open('select_cells_cheif_res_three_fourth_mc.pkl', 'wb'))
+
 def old_stuff():
     # Plot Amp: 
 
@@ -389,10 +419,9 @@ def beta_met_to_mapping(day, blocks, mc_indicator, lfp_lab, BC_bin, S_bin, Param
     master_res = {}
 
     for ix, (trial_ix, epoch_name) in enumerate(zip(ix_all, ['hold', 'reach'])):
-        f, ax = plt.subplots(nrows=3, ncols=3)
+        f, ax = plt.subplots(nrows=5, ncols=5)
 
         #Use only trials to target 64: 
-        
         #ix64 = np.nonzero(np.logical_or(day_lfp_lab ==64, day_lfp_lab==88))[0]
         ix64 = np.arange(len(train_ix))
         tmp_ix_train = np.ix_(train_ix[ix64], trial_ix)
@@ -430,11 +459,21 @@ def beta_met_to_mapping(day, blocks, mc_indicator, lfp_lab, BC_bin, S_bin, Param
         b = []
         ab = []
         for z, (iy, iz) in enumerate(zip(hold_kin_ix0_b, hold_kin_ix1_b)):
-            b.append(B[iy, iz, :])
-            ab.append(AB[iy, iz])
-        b = np.vstack((b))
-        ab = np.hstack((ab))
-
+            try:
+                b.append(B[iy, iz, :])
+            except:
+                print 'no b'
+                b = np.array([])
+            try:
+                ab.append(AB[iy, iz])
+            except:
+                print 'no ab'
+                ab = np.array([])
+        try:
+            b = np.vstack((b))
+            ab = np.hstack((ab))
+        except:
+            print 'no ab stack'
 
         # else:
         #     #MC reach
@@ -474,8 +513,17 @@ def beta_met_to_mapping(day, blocks, mc_indicator, lfp_lab, BC_bin, S_bin, Param
         amp_bundle = [amc, ab]
         #phz_bundle = [pmc, pb]
 
-        ix1 = np.arange(0, len(mc), 2)
-        ix2 = np.arange(1, len(mc), 2)
+        #Use 3/4 of the data instead 1/2 of data, for MC only. 
+
+        tmp1 = set(range(len(mc)))
+        tmp2 = set(range(0, len(mc), 4))
+        tmp3 = set(range(1, len(mc), 4))
+
+        ix1 = np.array(list(tmp1.difference(tmp2)))
+        ix2 = np.array(list(tmp1.difference(tmp3)))
+
+        #ix1 = np.arange(0, len(mc), 2)
+        #ix2 = np.arange(1, len(mc), 2)
 
         ix1b = np.arange(0, len(b), 2)
         ix2b = np.arange(1, len(b), 2)
@@ -493,20 +541,21 @@ def beta_met_to_mapping(day, blocks, mc_indicator, lfp_lab, BC_bin, S_bin, Param
                 port = portion_bundle[task]
 
                 for p, portion_ix in enumerate(port):
-                    res, met_x, spk_x = sort_stuff(met[portion_ix], spks[portion_ix, :], n_b, metric=metric, ang_mean_use=ang_mean_use)
-                    master_res[task, metric, p, epoch_name] = res
+                    if len(portion_ix) > 0:
+                        res, met_x, spk_x = sort_stuff(met[portion_ix], spks[portion_ix, :], n_b, metric=metric, ang_mean_use=ang_mean_use)
+                        master_res[task, metric, p, epoch_name] = res
 
-                    if np.logical_and(p == 2, metric=='slp'):
-                        for jj in range(spk_x.shape[1]):
-                            try:
-                                axi = ax[jj/3, jj%3]
-                                axi.plot(met_x, 1000*spk_x[:, jj], color[epoch_name][task]+'.')
-                                axi.plot(met_x, 1000*((np.array(met_x)*float(res['slope'][jj]))+ float(res['intcp'][jj])), color[epoch_name][task]+'-')
-                                #pop, pcov = scipy.optimize.curve_fit(fcn, met_x, 1000*spk_x[:, jj])
-                                #axi.plot(met_x, fcn2(met_x, *pop), color[task])
-                                axi.set_title('sig'+Params[day]['sorted_un'][jj])
-                            except:
-                                pass
+                        if np.logical_and(p == 2, metric=='slp'):
+                            for jj in range(spk_x.shape[1]):
+                                try:
+                                    axi = ax[jj/5, jj%5]
+                                    axi.plot(met_x, 1000*spk_x[:, jj], color[epoch_name][task]+'.')
+                                    axi.plot(met_x, 1000*((np.array(met_x)*float(res['slope'][jj]))+ float(res['intcp'][jj])), color[epoch_name][task]+'-')
+                                    #pop, pcov = scipy.optimize.curve_fit(fcn, met_x, 1000*spk_x[:, jj])
+                                    #axi.plot(met_x, fcn2(met_x, *pop), color[task])
+                                    axi.set_title('sig'+Params[day]['sorted_un'][jj])
+                                except:
+                                    pass
     plt.tight_layout()
     #plt.savefig('/Users/preeyakhanna/Dropbox/Carmena_Lab/Documentation/NeuronPaper/JNeuroDraft/canolty_amp_tuning_'+day+'.eps', format='eps', dpi=300)
     return master_res
@@ -541,12 +590,14 @@ def sort_stuff(met, spks, n_b, metric='slp', ang_mean_use=False):
         slope = []
         stder = []
         intcp = []
+        pv = []
         for i in range(spk_x.shape[1]):
             slp, intc, r_v, p_v, ste = scipy.stats.linregress(met_x, spk_x[:, i])
             slope.append(slp)
             stder.append(stder)
             intcp.append(intc)
-        res = dict(slope=slope, stder=stder, intcp=intcp)
+            pv.append(p_v)
+        res = dict(slope=slope, stder=stder, intcp=intcp, p_v=pv)
     elif metric == 'pref_phz':
         pp = []
         for i in range(spk_x.shape[1]):
@@ -598,4 +649,8 @@ def extract_for_apa(factor, aov, values = ['F', 'mse', 'eta', 'p']):
     return results
 
 
+if __name__ == '__main__':
+    main_mp()
+    # cr = main(test=False, animal='cart')
+    # plot_chief_results(cr)
 
