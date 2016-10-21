@@ -15,20 +15,25 @@ from scipy import ndimage
 import glob
 import state_space_spks as sss
 import state_space_cart as ssc
+import gc
 
 def train_test_mc_decoders():
     keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=True)
     predict_kin_w_spk.get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator)
 
-def train_mc_full_test_nf_full(animal, test=False, plot=False, day='022815'):
-    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, days=[day], animal=animal)
+def train_mc_full_test_nf_full(animal, test=False, plot=False, day='022815', all_cells=False, blocks = None):
+    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, 
+        days=[day], blocks=blocks, animal=animal, all_cells=all_cells, mc_indicator=['1'])
+
+    b=100
     print 'decoder dict starting for ', day, ' using days: ', days
-    decoder_dict = predict_kin_w_spk.get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_only=True, kin_type='endpt', animal=animal)
+    decoder_dict = predict_kin_w_spk.get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_only=True, kin_type='endpt', animal=animal, binsize=b)
+
     import pickle
     pickle.dump(decoder_dict, open(day+'_decoder_dict.pkl', 'wb'))
     print 'saving decoder dict'
 
-    b = 25
+    #b = 25
     if animal=='grom':
         spk_dict, lfp_dict, beta_dict, kin_dict, hold_dict = predict_kin_w_spk.get_full_blocks(keep_dict, days, blocks, mc_indicator, kin_type='endpt', mc_only=False)
     elif animal=='cart':
@@ -48,7 +53,7 @@ def train_mc_full_test_nf_full(animal, test=False, plot=False, day='022815'):
 
     #Only for single day now (test=True)
 
-    for binsize in [25]: #[5, 10, 25, 50, 100]:
+    for binsize in [b]: #[5, 10, 25, 50, 100]:
         #Bin stuff: 
         Bin_K = {}
         Bin_N = {}
@@ -118,13 +123,14 @@ def train_mc_full_test_nf_full(animal, test=False, plot=False, day='022815'):
                 day_pred_kin[day, blk] = pred_kin
 
                 if plot:
+                    model = 'KF'
                     f, ax = plt.subplots(nrows = 2, ncols=2)
-                    ax[0,0].plot(pred_kin[:, 3], label='pred x vel')
-                    ax[0,0].plot(kin_full[:, 3], label='act x vel')
+                    ax[0,0].plot(np.abs(pred_kin[:, 3]), label='pred x vel')
+                    ax[0,0].plot(np.abs(kin_full[:, 3]), label='act x vel')
                     ax[0,0].legend()
                     ax[0,0].set_title('Binsize: '+str(binsize)+' Model: '+model+' Key: '+k[1]+k[0])
-                    ax[1,0].plot(pred_kin[:, 5], label='pred y vel')
-                    ax[1,0].plot(kin_full[:, 5], label='act x vel')
+                    ax[1,0].plot(np.abs(pred_kin[:, 5]), label='pred y vel')
+                    ax[1,0].plot(np.abs(kin_full[:, 5]), label='act x vel')
                     ax[1,0].legend()
 
                 #Calc R2 after 1 minute in to -1 min out: 
@@ -165,6 +171,19 @@ def train_mc_full_test_nf_full(animal, test=False, plot=False, day='022815'):
                 
                 day_pred_kin_lpf[day, blk] = y_hat_lpf
                 day_pred_kin_lpf[day, blk, 'r2'] = R2_lpf_sum
+
+                #zscored speedplot:
+                f4, ax4 = plt.subplots()
+                spd = np.sqrt(kin_sig[:, 0]**2 + kin_sig[:, 1]**2)
+                ax4.plot(spd, 'b-', label='act')
+
+                lpf_spd = np.sqrt((lpf_x_vel - np.mean(lpf_x_vel))**2 + (lpf_y_vel - np.mean(lpf_y_vel))**2)
+                spd_hat = np.sqrt((y_hat[:, 0] - np.mean(y_hat[:, 0]))**2 + (y_hat[:, 1] - np.mean(y_hat[:, 1]))**2)
+
+                ax4.plot(lpf_spd, 'g-', label='lpf_spd')
+                ax4.plot(spd_hat, 'r-', label='spd_hat')
+                plt.legend()
+
                 
 
             # n, wn = scipy.signal.buttord(.75/40., .5/40, 3, 20)
@@ -173,14 +192,14 @@ def train_mc_full_test_nf_full(animal, test=False, plot=False, day='022815'):
             # R2_hpf = 1 - (np.sum((y - dat_filt)**2)/np.sum((y - y_mean)**2))
 
                 if plot:
-                    ax[0, 1].plot(y_hat_lpf[:, 0], label='pred x vel')
-                    ax[0, 1].plot(y[:, 0], label='act x vel')
+                    ax[0, 1].plot(np.abs(y_hat_lpf[:, 0]), label='pred x vel')
+                    ax[0, 1].plot(np.abs(y[:, 0]), label='act x vel')
                     # ax[0, 1].plot(dat_filt[:, 0], label='lpf_hpf_xvel')
                     ax[0, 1].plot(20+ (2*beta_sig), 'r-')
                     ax[0, 1].legend()
                     ax[0, 1].set_title('Binsize: '+str(binsize)+' Model: '+model+' Key: '+k[1]+k[0])
-                    ax[1, 1].plot(y_hat_lpf[:, 1], label='pred y vel')
-                    ax[1, 1].plot(y[:, 1], label='act y vel')
+                    ax[1, 1].plot(np.abs(y_hat_lpf[:, 1]), label='pred y vel')
+                    ax[1, 1].plot(np.abs(y[:, 1]), label='act y vel')
                     # ax[1, 1].plot(dat_filt[:, 1], label='lpf_hpf_yvel')
                     ax[1, 1].plot(20+ (2*beta_sig), 'r-')
                     ax[1, 1].legend()
@@ -281,14 +300,31 @@ def train_mc_full_test_nf_full(animal, test=False, plot=False, day='022815'):
     # R2_lpf_beta[binsize, k[1], k[0], model, 'y_hat_lpf'] = y_hat_lpf
     # R2_lpf_beta[binsize, k[1], k[0], model, 'y'] = y
 
-def open_plot_train_mc_full_test_nf_full(fname, mc_indicator_day, blocks_day, ax1=None, ax2=None, save=True, day=None):
+def sub_train_mc_full_test_nf_full(day):
+    fnames, days, mc_indicator = train_mc_full_test_nf_full('cart', test=False, plot=False, day=day, all_cells=True)
+    print fnames, days, mc_indicator
+    return dict(fnames=fnames, days=days, mc_indicator=mc_indicator)
+
+def open_plot_train_mc_full_test_nf_full(fname, mc_indicator_day, blocks_day, ax1=None, ax2=None, save=True, day=None, animal='grom'):
     if fname is None:
-        srch = '2016-08-27*'+day+'*'
+        if animal=='grom':
+            srch = '2016-08-27*'+day+'*'
+        elif animal == 'cart':
+            srch = '2016-10-*'+day+'*'+'25_cts_KF.pkl'
+            mc_ind = ssc.master_mc_indicator
+            day_ind = ssc.master_days
+            ix = np.array([mc_indicator_day == jj for ii, jj in enumerate(day_ind)])
+            ix2 = np.nonzero(ix==True)[0]
+            mc_indicator_cart = mc_ind[ix2]
+
         fnm = glob.glob(srch)
         if len(fnm)==1:
             fname = fnm[0]
         else:
-            raise Exception
+            fname = fnm[0]
+            print 'using fnm[0]'
+            #print moose
+            #raise Exception
 
     if ax1 is None and ax2 is None:
         f, ax = plt.subplots(nrows=3)
@@ -313,10 +349,10 @@ def open_plot_train_mc_full_test_nf_full(fname, mc_indicator_day, blocks_day, ax
 
 
     try:
-        fdict = pickle.load(open(fname[:-4]+'_tms_and_beta.pkl'))
-        tms_dict = fdict['tms_dict']
-        beta_dict = fdict['beta_dict']
-        make_beta_file = False
+        #fdict = pickle.load(open(fname[:-4]+'_tms_and_beta.pkl'))
+        #tms_dict = fdict['tms_dict']
+        #beta_dict = fdict['beta_dict']
+        make_beta_file = True
     except:
         make_beta_file = True
     
@@ -325,49 +361,83 @@ def open_plot_train_mc_full_test_nf_full(fname, mc_indicator_day, blocks_day, ax
             b = get_beta(np.squeeze(beta_dict[blk, 'raw_ad74']), bp_filt=[13, 25])
             beta_dict[blk] = b
         else:
-            f = load_files.load(blk, day)
-            Strobed=f['Strobed']
+            if animal == 'grom':
+                f = load_files.load(blk, day)
+                Strobed=f['Strobed']
 
-            #Key offset: 
-            ts_key = 'AD33_ts'
-            offset = f[ts_key]
+                #Key offset: 
+                ts_key = 'AD33_ts'
+                offset = f[ts_key]
 
-            t = np.arange(len(np.squeeze(f['AD33'])))
-            t_sub = np.arange(0, len(t), 25)
+                t = np.arange(len(np.squeeze(f['AD33'])))
+                t_sub = np.arange(0, len(t), 25)
 
-            tms = []
-            if np.any(np.array(offset.shape) > 1): #Any size is nonzero
-                offset = np.squeeze(offset)
-                lfp_offset = offset[1] #Second one is the LFP offset
-            else:
-                lfp_offset = offset[0, 0]
+                tms = []
+                if np.any(np.array(offset.shape) > 1): #Any size is nonzero
+                    offset = np.squeeze(offset)
+                    lfp_offset = offset[1] #Second one is the LFP offset
+                else:
+                    lfp_offset = offset[0, 0]
 
-            rew_ix = np.nonzero(Strobed[:, 1]==9)[0]
-            for ir in rew_ix:
-                rev_strb = Strobed[:ir, 1]
-                try:
-                    ix = np.max(np.nonzero(rev_strb==15)[0])
-                    tm1 = (Strobed[ix, 0]-lfp_offset)*1000
-                    ix1 = np.nonzero(t_sub <= tm1)[0][-1]
+                rew_ix = np.nonzero(Strobed[:, 1]==9)[0]
+                for ir in rew_ix:
+                    rev_strb = Strobed[:ir, 1]
+                    try:
+                        ix = np.max(np.nonzero(rev_strb==15)[0])
+                        tm1 = (Strobed[ix, 0]-lfp_offset)*1000
+                        ix1 = np.nonzero(t_sub <= tm1)[0][-1]
 
-                    tm2 = (Strobed[ir-3, 0]-lfp_offset)*1000
-                    ix2 = np.nonzero(t_sub <= tm2)[0][-1]
+                        tm2 = (Strobed[ir-3, 0]-lfp_offset)*1000
+                        ix2 = np.nonzero(t_sub <= tm2)[0][-1]
 
-                    tms.append([ix1, ix2])
-                except:
-                    print 'skipping reward: ', ir
+                        tms.append([ix1, ix2])
+                    except:
+                        print 'skipping reward: ', ir
+                animal_lfp = np.squeeze(f['AD74'])
+
+            elif animal == 'cart':
+                f = load_files.load(blk, day, animal='cart', include_hdfstuff=True)
+                hdf = f['hdf']
+                ts_func = f['ts_func']
+                rew_hdf_ix = np.array([j['time'] for i, j in enumerate(hdf.root.task_msgs[:]) if j['msg'] == 'reward'])
+                rew_hdfmsg_ix = np.array([i for i, j in enumerate(hdf.root.task_msgs[:]) if j['msg'] == 'reward'])
+                go_hdf_ix = []
+
+                animal_lfp = np.squeeze(f['ad124'])
+                
+                for r in rew_hdfmsg_ix:
+                    tmp = hdf.root.task_msgs[:r]['msg']
+                    if mc_indicator_cart[i_b] == '0':
+                        tmpix = np.max(np.nonzero(tmp=='origin_hold')[0])
+                        go_hdf_ix.append(hdf.root.task_msgs[tmpix+1]['time'])
+                    elif mc_indicator_cart[i_b] == '1':
+                        tmpix = np.sort(np.nonzero(tmp=='hold')[0])[-2]
+                        go_hdf_ix.append(hdf.root.task_msgs[tmpix]['time'])
+                go_hdf_ix = np.hstack((go_hdf_ix))
+                
+                rew_plx_ix = ts_func(rew_hdf_ix, 'plx')
+                go_plx_ix = ts_func(go_hdf_ix, 'plx')
+                tms =[]
+                assert len(np.squeeze(go_plx_ix).shape) == 1
+                assert len(np.squeeze(rew_plx_ix).shape) == 1
+                
+                t_sub = np.arange(0, len(animal_lfp), 25)
+                for i, (g, r) in enumerate(zip(go_plx_ix, rew_plx_ix)):
+                    sub_g = np.nonzero(t_sub<=g*1000)[0][-1]
+                    sub_r = np.nonzero(t_sub<=r*1000)[0][-1]
+                    tms.append([sub_g, sub_r])
 
             #Times: 
             tms_dict[blk] = tms
-            beta_dict[blk] = get_beta(np.squeeze(f['AD74']))
-            beta_dict[blk, 'raw_ad74'] = np.squeeze(f['AD74'])
+            beta_dict[blk] = get_beta(animal_lfp)
+            beta_dict[blk, 'raw_ad74'] = animal_lfp
 
     if make_beta_file:
         fnm = fname[:-4]+'_tms_and_beta.pkl'
         d = dict(tms_dict=tms_dict, beta_dict = beta_dict)
         pickle.dump(d, open(fnm, 'wb'))
         print 'done saving beta and times'
-
+        print 'victory_moose'
         print victory_moose
 
     mc_kin = []
@@ -594,24 +664,30 @@ def get_beta(lfp_dat, min_beta_burst_len=100, perc_beta = 60, bp_filt=[20, 45]):
     sig_bin_filt[area_mask[id_regions]] = 0
     return sig_bin_filt
 
-def main_full_file_plt(animal):
+def main_full_file_plt(animal, all_cells):
     if animal == 'grom':
         master_days = sss.master_days
+        master_blocks = sss.master_blocks
     elif animal == 'cart':
-        master_days = [ssc.master_days[0]]
+        master_days = [ssc.master_days[i] for i in [0]]
+        master_blocks = [ssc.master_blocks[i] for i in [0]]
 
+    # from multiprocessing import Pool
+    # pool = Pool(processes=4)
+    # results = pool.map(sub_train_mc_full_test_nf_full, ('011315', '011415', '011515', '011615'))
     for i_d, d in enumerate(master_days):
-    #for d in ['022415', '022515']:
-
+        #gc.collect()
         print 'starting day: ', d
-        fnames, days, mc_indicator = train_mc_full_test_nf_full(animal, test=True, day=d)
+        fnames, days, mc_indicator = train_mc_full_test_nf_full(animal, test=True, day=d, all_cells=all_cells)
         try:
             #open_plot_train_mc_full_test_nf_full(fnames[0], mc_indicator[0], sss.master_blocks[i_d])
-            open_plot_train_mc_full_test_nf_full(None, sss.master_mc_indicator[i_d], sss.master_blocks[i_d], day=d)
+            open_plot_train_mc_full_test_nf_full(None, ['011315'], ['a'], day=011315, animal=animal)
+            #open_plot_train_mc_full_test_nf_full(None, master_days[i_d], master_blocks[i_d], day=d, animal=animal)
         except:
-            print 'skipped plotting bc of error, relevant outputs:'
-            print fnames, days, mc_indicator
-            print d
+            print 'main_except statement'
+            # print 'skipped plotting bc of error, relevant outputs:'
+            # print fnames, days, mc_indicator
+            # print d
         print 'done w/ ', d
 
 def train_mc_test_nf_decoders(test=False):
@@ -819,5 +895,5 @@ def plot_train_mc_test_nf(fname):
 
 if __name__ == '__main__':
     print 'starting!'
-    main_full_file_plt('cart')
+    main_full_file_plt('cart', True)
     #train_mc_test_nf_decoders()
