@@ -76,13 +76,12 @@ master_cell_list = dict(
     # date_011615=np.hstack([[],  #Good cell list
     # ['13a'],  #Great cell list
     # ['1a', ]]), #Multiunit list 
-    )
 #Timing splits:
 #1_13_15, split a, b, c @: 307, 4219
 #1_14_15, split a, b, c @: 309, 4792
 nrows = 5
 
-def get_cells(plot=True, days=None, blocks=None, mc_indicator=None, test=False):
+def get_cells(plot=True, days=None, blocks=None, mc_indicator=None, test=False, all_cells=False, only3478=False):
     ''' Method to return cells after plotting their waveforms across all 
     blocks to ensure they are the same'''
 
@@ -109,9 +108,13 @@ def get_cells(plot=True, days=None, blocks=None, mc_indicator=None, test=False):
     keep_cell_dict = dict()
 
     for i_d, d in enumerate(days):
-        incomplete_list = []
-        ix_good = np.array([i for i, j in enumerate(master_cell_list['date_'+str(d)]) if len(j) > 1])
-        good_cell_list = list(np.unique(master_cell_list['date_'+str(d)]))
+        if all_cells:
+            incomplete_list = []
+            good_cell_list = 0
+        else:
+            incomplete_list = []
+            ix_good = np.array([i for i, j in enumerate(master_cell_list['date_'+str(d)]) if len(j) > 1])
+            good_cell_list = list(np.unique(master_cell_list['date_'+str(d)]))
 
         #Init graphs for 1) WFs, 2) Mean FR 
         if plot:
@@ -125,32 +128,60 @@ def get_cells(plot=True, days=None, blocks=None, mc_indicator=None, test=False):
             spk = load_files.load(b, d, animal='cart')
             
             if spk is not None:
-                for ig, gc in enumerate(good_cell_list):
-                    key = gc
-                    if key in spk.keys():
+                if all_cells is False:
+                    for ig, gc in enumerate(good_cell_list):
+                        key = gc
+                        if key in spk.keys():
 
+                            #Time stamps for LFP in secs --> ms
+                            secs = spk['ad124_ts']
+                         
 
-                        #Time stamps for LFP in secs --> ms
-                        secs = spk['ad124_ts']
-                     
+                            if plot:
+                                axi = ax[ig/y, ig%y]
+                                axi2 = ax2[ig/y, ig%y]
+                                mn = np.mean(spk['wf_dict'][key], axis=0)
+                                axi.plot(mn, color=cmap[ib])
+                                sem = np.std(spk[key], axis=0)/float(np.sqrt(spk[key].shape[0]))
+                                #axi.fill_between(np.arange(32), mn-sem, mn+sem, color=cmap[ib], alpha=0.5)
+                                axi.set_title(key)
+                                axi2.bar(ib, spk[key].shape[0]/float(len(secs)/1000.), color=cmap[ib])
+                                axi2.set_title(key)
 
-                        if plot:
-                            axi = ax[ig/y, ig%y]
-                            axi2 = ax2[ig/y, ig%y]
-                            mn = np.mean(spk['wf_dict'][key], axis=0)
-                            axi.plot(mn, color=cmap[ib])
-                            sem = np.std(spk[key], axis=0)/float(np.sqrt(spk[key].shape[0]))
-                            #axi.fill_between(np.arange(32), mn-sem, mn+sem, color=cmap[ib], alpha=0.5)
-                            axi.set_title(key)
-                            axi2.bar(ib, spk[key].shape[0]/float(len(secs)/1000.), color=cmap[ib])
-                            axi2.set_title(key)
+                            #Remove cells w/ mean FR less than 0.5 spikes per second
+                            if spk[key].shape[0]/(secs[-1]-secs[0]) < 0.5:
+                                incomplete_list.append(gc)
+                            
+                            if only3478:
+                                if int(key[:-1]) not in range(64, 129)+range(193, 257):
+                                    incomplete_list.append(gc)
+                                    'ignoring non-m1 cells: ', gc
 
-                        #Remove cells w/ mean FR less than 0.5 spikes per second
-                        if spk[key].shape[0]/(secs[-1]-secs[0]) < 0.5:
+                        else:
+                            print 'No ', key, ' in block ', b, ' , date ', d
                             incomplete_list.append(gc)
+                else:
+                    non_spk = ['ad124', 'ad124_ts', 'wf_dict', 'hdf', 'ts_func']
+                    secs = spk['ad124_ts']
+                    block_set = set([])
+                    for i, k in enumerate(spk.keys()):
+                        if k not in non_spk:
+                            if spk[k].shape[0]/(secs[-1]-secs[0]) > 0.5 :
+                                if only3478:
+                                    if int(k[:-1]) not in range(64, 129)+range(193, 257):
+                                        print 'ignoring non-m1 cells: ', k
+                                    else:
+                                        block_set.add(k)
+                                else:
+                                    block_set.add(k)
+                    if good_cell_list == 0:
+                        good_cell_list = block_set
                     else:
-                        print 'No ', key, ' in block ', b, ' , date ', d
-                        incomplete_list.append(gc)
+                        good_cell_list = good_cell_list.intersection(block_set)
+
+            else:
+                print 'spk is None! error loading file'
+
 
         good_set = set(good_cell_list)
         incomp_set = set(incomplete_list)

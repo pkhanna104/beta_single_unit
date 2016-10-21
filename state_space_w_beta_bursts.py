@@ -71,7 +71,7 @@ def get_beta_bursts(keep_dict, days, blocks, mc_indicator, perc_beta=60, bp_filt
         save_dict = dict(spk_dict=spk_dict, lfp_dict=lfp_dict, lfp_lab=lfp_lab, blocks=blocks,
             days=days, rt_dict=rt_dict, beta_dict=beta_dict, bef=bef, aft=aft, bp_filt=bp_filt)
         if fname is None:
-            raise
+            print 'no fname!'
         
         else:
             tdy = datetime.date.today()
