@@ -675,13 +675,18 @@ def plot_6class_lda_xval_within_task(fname='six_class_LDA_within_task_xval5.pkl'
     mc_perf = []
     nf_ch = []
     nf_perf = []
+    f2, ax2 = plt.subplots()
+
+    x = dict()
+    for i in [0, 1, 3, 4]:
+        x[i] = []
 
     for i_d, d in enumerate(np.sort(dat.keys())): #days
         f, ax = plt.subplots(ncols=3, figsize=(15, 5))
 
-        x = dat[d]['nf', 'nf', 'xval']
+        xx = dat[d]['nf', 'nf', 'xval']
         axi = ax[0]
-        axi.pcolormesh(np.flipud(x), vmin=0, vmax = 1)
+        axi.pcolormesh(np.flipud(xx), vmin=0, vmax = 1)
         ax[0].set_xticks([.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5])
         ax[0].set_yticks([.5, 1.5, 2.5, 3.5, 4.5, 5.5, 6.5])
         lab = np.array(['NF 1', 'NF 2', 'NF 3', 'NF 4', 'Hold', 'Reach'])
@@ -690,8 +695,8 @@ def plot_6class_lda_xval_within_task(fname='six_class_LDA_within_task_xval5.pkl'
         ax[0].set_yticklabels(lab[-1:0:-1])
 
 
-        x = dat[d]['mc', 'mc', 'xval'][4:, 4:]
-        ax[1].pcolormesh(np.flipud(x), vmin=0, vmax = 1)
+        xx = dat[d]['mc', 'mc', 'xval'][4:, 4:]
+        ax[1].pcolormesh(np.flipud(xx), vmin=0, vmax = 1)
         ax[1].set_xticks([.5, 1.5,])
         ax[1].set_yticks([.5, 1.5, ])
         lab = np.array(['Hold', 'Reach'])
@@ -716,10 +721,17 @@ def plot_6class_lda_xval_within_task(fname='six_class_LDA_within_task_xval5.pkl'
         nf_ch.append(perc_corr_nf_ch)
 
         ax[2].bar(0, perc_corr_mc, color='red')
+        x[0].append(perc_corr_mc)
+
         ax[2].bar(1, perc_corr_mc_ch, color='red', alpha=.5)
-        
+        x[1].append(perc_corr_mc_ch)
+
         ax[2].bar(3, perc_corr_nf, color='blue')
+        x[3].append(perc_corr_nf)
+
         ax[2].bar(4, perc_corr_nf_ch, color='blue', alpha=.5)
+        x[4].append(perc_corr_nf_ch)
+
         ax[2].set_xticks([.5, 1.5, 3.5, 4.5])
         ax[2].set_xticklabels(['MC Perc. Corr.', 'MC Chance', 'NF Perc. Corr', 'NF Chance'])
         ax[2].set_ylabel('LDA Percent Correct')
@@ -729,7 +741,14 @@ def plot_6class_lda_xval_within_task(fname='six_class_LDA_within_task_xval5.pkl'
     t2, p2 = scipy.stats.ttest_rel(nf_perf, nf_ch)
     print 'mc repated measures ttest: ', p1, t1
     print 'nf repated measures ttest: ', p2, t2
-
+    ax2.bar(0, np.mean(x[0]), color='red')
+    ax2.bar(1, np.mean(x[1]), color='red', alpha=0.5)
+    ax2.bar(3, np.mean(x[3]), color='blue')
+    ax2.bar(4, np.mean(x[4]), color='blue', alpha=0.5)
+    ax2.set_xticks([.5, 1.5, 3.5, 4.5])
+    ax2.set_xticklabels(['MC Perc. Corr.', 'MC Chance', 'NF Perc. Corr', 'NF Chance'])
+    ax2.set_ylabel('LDA Percent Correct')
+    plt.tight_layout()
 
 def plot_6class_lda_x_tasks(fname):
     #cmap = ['maroon', 'firebrick', 'orangered', 'darksalmon', 'powderblue', 'lightslategrey']
