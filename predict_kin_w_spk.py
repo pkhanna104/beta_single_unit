@@ -224,8 +224,16 @@ def get_cart_kin(block, day, go_cue_times_lfp, bef, aft):
     #Yield metric x trial x time
     return np.swapaxes(kin_sig, 1, 2)
 
+class ssm_spd(state_space_models.StateSpaceEndptVel2D):
+    def __init__(self):
+        super(self, ssm.StateSpaceEndptVel2D).__init__()
+        self.drives_obs = np.array([True, True])
+        self.drives_obs_inds = [0, 1]
+        self.state_order = np.array([1., np.nan])
+        self.is_stochastic = np.array([True, False])
+        ssm.train_inds = np.array([0, 1])
 
-def get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_only=False, kin_type='endpt', animal='grom'):
+def get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_only=False, kin_type='endpt', animal='grom', binsize=25, include_speed=False):
 
     ''' Goal is to use entire MC file (not just trial epochs) to train decoder'''
 
@@ -262,179 +270,190 @@ def get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_o
             smooth_kin_dict[k][:, j] = np.convolve(window, kin_dict[k][:,j], mode='same')
 
 
-    for binsize in [25]: #[5, 10, 25, 50, 100]:
-        #Bin stuff: 
-        Bin_K = {}
-        Bin_N = {}
-        Bin_B = {}
-        Bin_H = {}
-        for k in spk_dict.keys():
-            Bin_N[k] = {}
-            for u in spk_dict[k].keys():
-                Bin_N[k][u] = bin_(spk_dict[k][u], binsize, mode='cnts')
-            Bin_K[k] = bin_(smooth_kin_dict[k], binsize, mode='mean')
+
+    #Bin stuff: 
+    Bin_K = {}
+    Bin_N = {}
+    Bin_B = {}
+    Bin_H = {}
+    for k in spk_dict.keys():
+        Bin_N[k] = {}
+        for u in spk_dict[k].keys():
+            Bin_N[k][u] = bin_(spk_dict[k][u], binsize, mode='cnts')
+        Bin_K[k] = bin_(smooth_kin_dict[k], binsize, mode='mean')
+    
+        if decoder_only is False:
+            Bin_B[k] = bin_(beta_dict[k][1,:], binsize, mode='mode')
+            #Bin_H[k] = bin_(hold_dict[k], binsize, mode='mode')
+
+    lpf_window = scipy.signal.gaussian(401, std=151)
+    t_ix = np.arange(0, 401, binsize)
+    lpf_window = lpf_window[t_ix]
+    lpf_window = lpf_window/np.sum(lpf_window)
+
+    #Train MC decoder: 
+    for k in Bin_K.keys():
+
+        mat_Bin_N_tmp = []
+        for u in Bin_N[k]:
+            mat_Bin_N_tmp.append(Bin_N[k][u])
+        obs = np.hstack((mat_Bin_N_tmp))
+        kin = Bin_K[k]
+        z = np.zeros((len(kin), ))
         
-            if decoder_only is False:
-                Bin_B[k] = bin_(beta_dict[k][1,:], binsize, mode='mode')
-                Bin_H[k] = bin_(hold_dict[k], binsize, mode='mode')
-
-        lpf_window = scipy.signal.gaussian(401, std=151)
-        t_ix = np.arange(0, 401, binsize)
-        lpf_window = lpf_window[t_ix]
-        lpf_window = lpf_window/np.sum(lpf_window)
-
-        #Train MC decoder: 
-        for k in Bin_K.keys():
-
-            mat_Bin_N_tmp = []
-            for u in Bin_N[k]:
-                mat_Bin_N_tmp.append(Bin_N[k][u])
-            obs = np.hstack((mat_Bin_N_tmp))
-            kin = Bin_K[k]
-            z = np.zeros((len(kin), ))
-            kin_vel = kin[:, [2,3]]
-            kin_full = np.vstack((kin[:, 0], z, kin[:, 1], kin[:, 2], z, kin[:,3])).T
-
-            nbins, n_units = obs.shape
+        kin_vel = kin[:, [2,3]]
+        
+        
+        if include_speed:
+            spd = np.sum(kin[:, [2,3]]**2, axis=1)
+            kin_full = np.vstack((kin[:, 0], z, kin[:, 1], kin[:, 2], spd, kin[:,3])).T
+            ssm = state_space_models.StateSpaceEndptVel3D()
+            kin_vel = np.hstack((kin[:, [2]], spd[:, np.newaxis], kin[:, [3]]))
+        else:
             ssm = state_space_models.StateSpaceEndptVel2D()
-            A, B, W = ssm.get_ssm_matrices(update_rate=1./binsize)
+            kin_full = np.vstack((kin[:, 0], z, kin[:, 1], kin[:, 2], z, kin[:,3])).T
+        nbins, n_units = obs.shape
+        
 
-            # #Actually calculated A, W: 
-            # x_t_minus_1 = kin_full[:-1, [2, 3]] #t x 2
-            # x_t_0 = kin_full[1:, [2, 3]] # t x 2
+        A, B, W = ssm.get_ssm_matrices(update_rate=1./binsize)
+        if animal == 'cart':
+            W *= 10
+        # #Actually calculated A, W: 
+        # x_t_minus_1 = kin_full[:-1, [2, 3]] #t x 2
+        # x_t_0 = kin_full[1:, [2, 3]] # t x 2
 
-            # x_t_minus_1 = kin_full[:-1, [3, 5]] #t x 2
-            # x_t_0 = kin_full[1:, [3, 5]] # t x 2
-            # sub_A = np.zeros((2, 2))
-            # sub_A_d = np.mean(np.diag(np.linalg.lstsq(x_t_minus_1, x_t_0)[0]))
-            # sub_A[0,0] = sub_A_d
-            # sub_A[1,1] = sub_A_d
+        # x_t_minus_1 = kin_full[:-1, [3, 5]] #t x 2
+        # x_t_0 = kin_full[1:, [3, 5]] # t x 2
+        # sub_A = np.zeros((2, 2))
+        # sub_A_d = np.mean(np.diag(np.linalg.lstsq(x_t_minus_1, x_t_0)[0]))
+        # sub_A[0,0] = sub_A_d
+        # sub_A[1,1] = sub_A_d
 
-            # A[3,3] = sub_A_d
-            # A[5,5] = sub_A_d
+        # A[3,3] = sub_A_d
+        # A[5,5] = sub_A_d
 
-            # sub_W = np.cov(x_t_0.T - np.mat(sub_A)*x_t_minus_1.T)
-            # W[3,3] = np.max(np.diag(sub_W))
-            # W[5,5] = np.max(np.diag(sub_W))
+        # sub_W = np.cov(x_t_0.T - np.mat(sub_A)*x_t_minus_1.T)
+        # W[3,3] = np.max(np.diag(sub_W))
+        # W[5,5] = np.max(np.diag(sub_W))
 
-            C = np.zeros([n_units, ssm.n_states])
+        C = np.zeros([n_units, ssm.n_states])
 
-            for model in ['kf']:#['ppf', 'kf']:
-                print 'Starting model: ', model, ' for key: ', k, ' for binsize: ',binsize
-                if model == 'kf':
-                    C[:, ssm.drives_obs_inds], Q = kfdecoder.KalmanFilter.MLE_obs_model(kin_vel.T, obs.T, include_offset=True)
+        for model in ['kf']:#['ppf', 'kf']:
+            print 'Starting model: ', model, ' for key: ', k, ' for binsize: ',binsize
+            if model == 'kf':
+                C[:, ssm.drives_obs_inds], Q = kfdecoder.KalmanFilter.MLE_obs_model(kin_vel.T, obs.T, include_offset=True)
+            
+                # instantiate KFdecoder
+                filter_ = kfdecoder.KalmanFilter(A, W, C, Q, is_stochastic=ssm.is_stochastic)
+                filter_._init_state()
+
+            elif model == 'ppf':
+                obs_ppf = obs.copy()
+                obs_ppf[obs_ppf > 1] = 1
+
+                C[:, ssm.drives_obs_inds], pvals = ppfdecoder.PointProcessFilter.MLE_obs_model(kin_vel.T, obs_ppf.T, include_offset=True)
                 
-                    # instantiate KFdecoder
-                    filter_ = kfdecoder.KalmanFilter(A, W, C, Q, is_stochastic=ssm.is_stochastic)
-                    filter_._init_state()
+                filter_ = ppfdecoder.PointProcessFilter(A, W, C, B=B, dt=1./binsize, is_stochastic=ssm.is_stochastic)
+                filter_._init_state()
 
-                elif model == 'ppf':
-                    obs_ppf = obs.copy()
-                    obs_ppf[obs_ppf > 1] = 1
+            decoder_dict[str(binsize), k[1], k[0], model] = filter_
+            print 'adding decoder dict: ', str(binsize), k[1], k[0], model
 
-                    C[:, ssm.drives_obs_inds], pvals = ppfdecoder.PointProcessFilter.MLE_obs_model(kin_vel.T, obs_ppf.T, include_offset=True)
+            if decoder_only is False:
+                #Get training: 
+                s = filter_.state
+                nbins, n_ft = kin.shape
+
+                st = []
+
+                #Cycle through bins
+                for t in range(nbins):
+                    obs_ = obs[t, :][:, np.newaxis]
+                    if model == 'ppf':
+                        obs_[obs_>1] = 1
+
+                    s = filter_._forward_infer(s, obs_)
+                    st.append(s.mean)
+                pred_kin = np.array(np.hstack((st))).T
+
+                # f, ax = plt.subplots(nrows = 2)
+                # ax[0].plot(pred_kin[:, 3], label='pred x vel')
+                # ax[0].plot(kin_full[:, 3], label='act x vel')
+                # ax[0].legend()
+                # ax[0].set_title('Binsize: '+str(binsize)+' Model: '+model+' Key: '+k[1]+k[0])
+                # ax[1].plot(pred_kin[:, 5], label='pred y vel')
+                # ax[1].plot(kin_full[:, 5], label='act x vel')
+                # ax[1].legend()
+
+                #Calc R2 after 1 minute in to -1 min out: 
+                n_samp_buffer = int(60*1000./binsize)
+                y_hat = pred_kin[n_samp_buffer:-n_samp_buffer, [3, 5]]
+                y = kin_full[n_samp_buffer:-n_samp_buffer, [3, 5]]
+                beta_sig = Bin_B[k][0, n_samp_buffer:-n_samp_buffer]
+                kin_sig = Bin_K[k][n_samp_buffer:-n_samp_buffer, [2, 3]]
+                
+                binary_kin_sig = np.array([int(np.logical_or(np.abs(kin_sig[i, 0])>0.5, np.abs(kin_sig[i, 1])>0.5)) for i in range(len(kin_sig))])
+
+                y_mean = np.tile(np.mean(y, axis=0)[np.newaxis, :], [y.shape[0], 1])
+                R2_ = 1 - (np.sum((y - y_hat)**2)/np.sum((y - y_mean)**2))
+
+                R2_jt[binsize, k[1], k[0], model] = R2_
+                #Pred_Kin[binsize, k[1], k[0], model] = y_hat.copy()
+                #Full_Kin[binsize, k[1], k[0], model] = y.copy()
+                lpf_x_vel = np.convolve(lpf_window, y_hat[:, 0], mode='same')
+                lpf_y_vel = np.convolve(lpf_window, y_hat[:, 1], mode='same')
+                
+                y_hat_lpf = np.vstack((lpf_x_vel, lpf_y_vel)).T
+
+                R2_lpf_ = 1 - (np.sum((y - y_hat_lpf)**2)/np.sum((y - y_mean)**2))
+
+                f, ax = plt.subplots(nrows = 2)
+                ax[0].plot(y_hat_lpf[:, 0], label='pred x vel')
+                ax[0].plot(y[:, 0], label='act x vel')
+                ax[0].plot(20+ (2*beta_sig), 'r-')
+                ax[0].legend()
+                ax[0].set_title('Binsize: '+str(binsize)+' Model: '+model+' Key: '+k[1]+k[0])
+                ax[1].plot(y_hat_lpf[:, 1], label='pred y vel')
+                ax[1].plot(y[:, 1], label='act x vel')
+                ax[1].plot(20+ (2*beta_sig), 'r-')
+                ax[1].legend()
+
+                Pred_Kin_lpf[binsize, k[1], k[0], model] = y_hat_lpf
+                R2_lpf_jt[binsize, k[1], k[0], model] = R2_lpf_
+
+                lpf_spd = np.sqrt(lpf_x_vel**2 + lpf_y_vel**2)
+                act_spd = np.sqrt(y[:,0]**2 + y[:,1]**2)
+                R2_lpf_spd_ = 1 - (np.sum((act_spd - lpf_spd)**2)/np.sum((act_spd - np.mean(act_spd))**2))
+                R2_lpf_spd_jt[binsize, k[1], k[0], model] = R2_lpf_spd_
+
+                hold_periods = Bin_H[k][0, n_samp_buffer:-n_samp_buffer]
+
+                hold_ix = np.nonzero(binary_kin_sig==0)[0]
+                beta_hold = beta_sig[hold_ix]
+
+                #y_hold = y.copy()
+                #y_pred = y_hat_lpf.copy()
+
+                y_hold = y[hold_ix, :]
+                y_pred = y_hat_lpf[hold_ix, :]
+
+                for beta_ix_ in [0, 1]:
+                    ix = np.nonzero(beta_hold==beta_ix_)[0]
+                    print 'beta ix: ', len(ix)
                     
-                    filter_ = ppfdecoder.PointProcessFilter(A, W, C, B=B, dt=1./binsize, is_stochastic=ssm.is_stochastic)
-                    filter_._init_state()
+                    for vel in [0, 1]:
+                        r2_ = 1 - (np.sum((np.abs(y_pred[ix, vel]) - np.abs(y_hold[ix, vel]))**2)/(np.sum((np.abs(y_hold[ix, vel])- np.abs(np.mean(y_hold[ix, vel])))**2)))
+                        R2_lpf_beta[binsize, k[1], k[0], model, beta_ix_, vel] = r2_
 
-                decoder_dict[str(binsize), k[1], k[0], model] = filter_
-                print 'adding decoder dict: ', str(binsize), k[1], k[0], model
+                        MN = np.mean(np.abs(y_pred[ix, vel]) - np.abs(y_hold[ix, vel]))
+                        print 'beta ix: ', beta_ix_, ' vel: ', vel, MN
 
-                if decoder_only is False:
-                    #Get training: 
-                    s = filter_.state
-                    nbins, n_ft = kin.shape
-
-                    st = []
-
-                    #Cycle through bins
-                    for t in range(nbins):
-                        obs_ = obs[t, :][:, np.newaxis]
-                        if model == 'ppf':
-                            obs_[obs_>1] = 1
-
-                        s = filter_._forward_infer(s, obs_)
-                        st.append(s.mean)
-                    pred_kin = np.array(np.hstack((st))).T
-
-                    # f, ax = plt.subplots(nrows = 2)
-                    # ax[0].plot(pred_kin[:, 3], label='pred x vel')
-                    # ax[0].plot(kin_full[:, 3], label='act x vel')
-                    # ax[0].legend()
-                    # ax[0].set_title('Binsize: '+str(binsize)+' Model: '+model+' Key: '+k[1]+k[0])
-                    # ax[1].plot(pred_kin[:, 5], label='pred y vel')
-                    # ax[1].plot(kin_full[:, 5], label='act x vel')
-                    # ax[1].legend()
-
-                    #Calc R2 after 1 minute in to -1 min out: 
-                    n_samp_buffer = int(60*1000./binsize)
-                    y_hat = pred_kin[n_samp_buffer:-n_samp_buffer, [3, 5]]
-                    y = kin_full[n_samp_buffer:-n_samp_buffer, [3, 5]]
-                    beta_sig = Bin_B[k][0, n_samp_buffer:-n_samp_buffer]
-                    kin_sig = Bin_K[k][n_samp_buffer:-n_samp_buffer, [2, 3]]
-                    
-                    binary_kin_sig = np.array([int(np.logical_or(np.abs(kin_sig[i, 0])>0.5, np.abs(kin_sig[i, 1])>0.5)) for i in range(len(kin_sig))])
-
-                    y_mean = np.tile(np.mean(y, axis=0)[np.newaxis, :], [y.shape[0], 1])
-                    R2_ = 1 - (np.sum((y - y_hat)**2)/np.sum((y - y_mean)**2))
-
-                    R2_jt[binsize, k[1], k[0], model] = R2_
-                    #Pred_Kin[binsize, k[1], k[0], model] = y_hat.copy()
-                    #Full_Kin[binsize, k[1], k[0], model] = y.copy()
-                    lpf_x_vel = np.convolve(lpf_window, y_hat[:, 0], mode='same')
-                    lpf_y_vel = np.convolve(lpf_window, y_hat[:, 1], mode='same')
-                    
-                    y_hat_lpf = np.vstack((lpf_x_vel, lpf_y_vel)).T
-
-                    R2_lpf_ = 1 - (np.sum((y - y_hat_lpf)**2)/np.sum((y - y_mean)**2))
-
-                    f, ax = plt.subplots(nrows = 2)
-                    ax[0].plot(y_hat_lpf[:, 0], label='pred x vel')
-                    ax[0].plot(y[:, 0], label='act x vel')
-                    ax[0].plot(20+ (2*beta_sig), 'r-')
-                    ax[0].legend()
-                    ax[0].set_title('Binsize: '+str(binsize)+' Model: '+model+' Key: '+k[1]+k[0])
-                    ax[1].plot(y_hat_lpf[:, 1], label='pred y vel')
-                    ax[1].plot(y[:, 1], label='act x vel')
-                    ax[1].plot(20+ (2*beta_sig), 'r-')
-                    ax[1].legend()
-
-                    Pred_Kin_lpf[binsize, k[1], k[0], model] = y_hat_lpf
-                    R2_lpf_jt[binsize, k[1], k[0], model] = R2_lpf_
-
-                    lpf_spd = np.sqrt(lpf_x_vel**2 + lpf_y_vel**2)
-                    act_spd = np.sqrt(y[:,0]**2 + y[:,1]**2)
-                    R2_lpf_spd_ = 1 - (np.sum((act_spd - lpf_spd)**2)/np.sum((act_spd - np.mean(act_spd))**2))
-                    R2_lpf_spd_jt[binsize, k[1], k[0], model] = R2_lpf_spd_
-
-                    hold_periods = Bin_H[k][0, n_samp_buffer:-n_samp_buffer]
-
-                    hold_ix = np.nonzero(binary_kin_sig==0)[0]
-                    beta_hold = beta_sig[hold_ix]
-
-                    #y_hold = y.copy()
-                    #y_pred = y_hat_lpf.copy()
-
-                    y_hold = y[hold_ix, :]
-                    y_pred = y_hat_lpf[hold_ix, :]
-
-                    for beta_ix_ in [0, 1]:
-                        ix = np.nonzero(beta_hold==beta_ix_)[0]
-                        print 'beta ix: ', len(ix)
-                        
-                        for vel in [0, 1]:
-                            r2_ = 1 - (np.sum((np.abs(y_pred[ix, vel]) - np.abs(y_hold[ix, vel]))**2)/(np.sum((np.abs(y_hold[ix, vel])- np.abs(np.mean(y_hold[ix, vel])))**2)))
-                            R2_lpf_beta[binsize, k[1], k[0], model, beta_ix_, vel] = r2_
-
-                            MN = np.mean(np.abs(y_pred[ix, vel]) - np.abs(y_hold[ix, vel]))
-                            print 'beta ix: ', beta_ix_, ' vel: ', vel, MN
-
-                            R2_lpf_beta[binsize, k[1], k[0], model, beta_ix_, vel, 'mean_abs_err'] = MN
-                            R2_lpf_beta[binsize, k[1], k[0], model, beta_ix_, vel, 'y_pred'] = y_pred[ix, vel]
-                            R2_lpf_beta[binsize, k[1], k[0], model, beta_ix_, vel, 'y_act'] = y_hold[ix, vel]
-                    R2_lpf_beta[binsize, k[1], k[0], model, 'full_R2_lpf'] = R2_lpf_
-                    R2_lpf_beta[binsize, k[1], k[0], model, 'y_hat_lpf'] = y_hat_lpf
-                    R2_lpf_beta[binsize, k[1], k[0], model, 'y'] = y
+                        R2_lpf_beta[binsize, k[1], k[0], model, beta_ix_, vel, 'mean_abs_err'] = MN
+                        R2_lpf_beta[binsize, k[1], k[0], model, beta_ix_, vel, 'y_pred'] = y_pred[ix, vel]
+                        R2_lpf_beta[binsize, k[1], k[0], model, beta_ix_, vel, 'y_act'] = y_hold[ix, vel]
+                R2_lpf_beta[binsize, k[1], k[0], model, 'full_R2_lpf'] = R2_lpf_
+                R2_lpf_beta[binsize, k[1], k[0], model, 'y_hat_lpf'] = y_hat_lpf
+                R2_lpf_beta[binsize, k[1], k[0], model, 'y'] = y
     if decoder_only is False:
         import pickle
         # pickle.dump(R2, open('mc_fit_R2.pkl', 'wb'))
@@ -471,7 +490,7 @@ def bin_(x, binsize, mode='cnts'):
     return np.vstack((x_binned)).T
 
 
-def get_full_blocks_cart(keep_dict, days, blocks, mc_indicator, mc_only=True, kin_type='endpt', decoder=None):
+def get_full_blocks_cart(keep_dict, days, blocks, mc_indicator, mc_only=True, nf_only = False, kin_type='endpt', decoder=None):
     #Make sure same number of blocks / days etc.
     assert len(days) == len(blocks) == len(keep_dict.keys())    
     spk_dict = {} #Spikes dict
@@ -483,6 +502,8 @@ def get_full_blocks_cart(keep_dict, days, blocks, mc_indicator, mc_only=True, ki
     for i_d, day in enumerate(days):
         if mc_only == True:
             ix = np.array([m.start() for m in re.finditer('1', mc_indicator[i_d])])
+        elif nf_only == True:
+            ix = np.array([m.start() for m in re.finditer('0', mc_indicator[i_d])])
         else:
             ix = np.arange(len(mc_indicator[i_d]))
 
@@ -535,15 +556,23 @@ def get_full_blocks_cart(keep_dict, days, blocks, mc_indicator, mc_only=True, ki
                     spk_dict[blocks[i_d][i_b], day][un] = bin1ms_full(ts_arr, plx_lims[0], plx_lims[1])
 
                 #LFPs
-                lfp_dict[blocks[i_d][i_b], day] = spk['ad124']
+                lfp_dict[blocks[i_d][i_b], day] = spk['ad124'][int(plx_lims[0]*1000):int(plx_lims[1]*1000)]
+
                 perc_beta=60
-                min_beta_burst_len = 100
+                min_beta_burst_len = 125
 
                 nyq = 0.5* 1000
                 bw_b, bw_a = scipy.signal.butter(5, [bp_filt[0]/nyq, bp_filt[1]/nyq], btype='band')
                 data_filt = scipy.signal.filtfilt(bw_b, bw_a, lfp_dict[blocks[i_d][i_b], day])
                 
-                sig = np.abs(scipy.signal.hilbert(data_filt, N=None))
+
+                ### scipy.signal.hilbert stupidly doesn't pad zeros to get to nfft ##
+                nfft = 1<<(len(data_filt)-1).bit_length()
+                data_filt_pad = np.zeros(nfft)
+                data_filt_pad[:len(data_filt)] = data_filt
+
+                sig_pad = np.abs(scipy.signal.hilbert(data_filt_pad))
+                sig = sig_pad[:len(data_filt)]
                 sig_bin = np.zeros_like(sig)
                 sig_bin[sig > np.percentile(sig.reshape(-1), perc_beta)] = 1
 
@@ -727,13 +756,14 @@ def bin1ms_full(ts_arr, start, stop):
                 print 'rounding means skipping: ', t, ' on full trial'
     return tmp
 
-def get_unbinned(test=False, days=None, animal='grom'):
+def get_unbinned(test=False, days=None, animal='grom', all_cells=False, blocks=None, mc_indicator=None):
     #Get good cells (ensure they're all in all blocks)
     if animal=='grom':
         keep_dict, days, blocks, mc_indicator = sss.get_cells(plot=False, test=test, days=days)
     
     elif animal == 'cart':
-        keep_dict, days, blocks, mc_indicator = sssc.get_cells(plot=False, test=test, days=days)
+        keep_dict, days, blocks, mc_indicator = sssc.get_cells(plot=False, test=test, days=days, 
+            blocks = blocks, mc_indicator=mc_indicator, all_cells=all_cells, only3478=False)
     
     #Get spike / lfp / beta dictionaries with data
     spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict = ssbb.get_beta_bursts(keep_dict, 
@@ -800,7 +830,7 @@ def main_process(kin_signal_dict, binned_kin_signal_dict, B_bin, BC_bin, S_bin, 
             elif int(mc_indicator[i_d][ib]) == 0:
                 tt = ['beta']*n_trials
             else:
-                raise NameError
+                print 'Error! Mc indicator [i_d][ib] is not a 1 or 0: i_d: ', i_d, d, 'i_b: ', i_b, b, 'mc[i_d][ib]: ', mc_indicator[i_d][ib]
 
             day_trial_type.append(tt)
             day_lfp_lab.append(lfp_lab[b, d])
@@ -1042,7 +1072,6 @@ def rt_aligned_psth(test, binsize, blocks, days, rt_dict, S_bin, Params, pre=100
         ax[i_d].bar(0, (pre_post_same_diff[0, 0]/tot) + (pre_post_same_diff[1, 0]/tot)) #Same same & Diff Same
         ax[i_d].bar(1, (pre_post_same_diff[1, 1]/tot) + (pre_post_same_diff[0, 1]/tot)) #Diff diff & Same diff
 
-
 def plot_ex_beta_psth():
     d = '022315'
     Spk_Day = S_bin[d]*binsize
@@ -1138,8 +1167,6 @@ def plot_ex_beta_psth():
     plt.tight_layout()
     plt.savefig('/Users/preeyakhanna/Dropbox/Carmena_Lab/Documentation/NeuronPaper/JNeuroDraft/example_psths_by_beta_64only.eps', format='eps', dpi=300)
 
-
-
 def get_sets(arr):
     sets = []
     subset= []
@@ -1158,14 +1185,29 @@ def get_sets(arr):
             pass
     return sets
 
+def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal, Params, animal='grom'):
+    if animal == 'grom':
+        test = False
+        keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, animal='grom', all_cells=False)
+        binsize = 100
+        import state_space_w_beta_bursts as ssbb
+        B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
+            beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=binsize, animal='grom')
+        
+        kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, 
+            go_times_dict, lfp_lab, binsize, smooth = 50, animal='grom')
 
+    elif animal == 'cart':
+        test = False
+        keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, animal='cart', all_cells=True)
+        binsize = 100
+        import state_space_w_beta_bursts as ssbb
+        B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
+            beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=binsize, animal='cart')
+        
+        kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, 
+            go_times_dict, lfp_lab, binsize, smooth = 50, animal='cart')
 
-def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal, Params):
-    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, animal='cart')
-    B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
-        beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=binsize, animal='cart')
-    kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, 
-        go_times_dict, lfp_lab, binsize, smooth = 50, animal='cart')
     cmap = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
 
     f, ax = plt.subplots(figsize=(5, 4))
@@ -1210,13 +1252,14 @@ def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal
 
             mc = np.hstack((spk['mc']))
             bt = np.hstack((spk['beta']))
-            print 'sizes: ', mc.shape, bt.shape
+            if np.logical_and(np.mean(mc)/.1 > 5., np.mean(bt)/.1 > .5):
+                print 'sizes: ', mc.shape, bt.shape
 
-            u1, p1 = scipy.stats.mannwhitneyu(mc, bt)
-            if p1 < 0.05:
-                perc_same_diff[1] += 1
-            else:
-                perc_same_diff[0] += 1
+                u1, p1 = scipy.stats.mannwhitneyu(mc, bt)
+                if p1 < 0.05:
+                    perc_same_diff[1] += 1
+                else:
+                    perc_same_diff[0] += 1
         ax.bar(i_d+.1, perc_same_diff[1]/float(np.sum(perc_same_diff)), color=tuple(np.array(cmap[i_d])/255.))
         ax.text(i_d+.5, .1+perc_same_diff[1]/float(np.sum(perc_same_diff)), 'n='+str(iu+1), fontsize=16,horizontalalignment='center')
     ax.set_ylabel('Percent of Units')
@@ -1299,7 +1342,7 @@ def run_LDA_beta(method):
                 elif int(mc_indicator[i_d][ib]) == 0:
                     tt = ['beta']*n_trials
                 else:
-                    raise
+                    raise Exception
 
                 day_trial_type.append(tt)
                 day_lfp_lab.append(lfp_lab[bn, d])
@@ -2092,14 +2135,14 @@ def bar_plots_for_conf_dict(CONF, days):
     f.tight_layout()
     f2.tight_layout()
     
-def six_class_LDA(test=True, within_task_comparison=True, x_task_comparison=False):
+def six_class_LDA(test=True, within_task_comparison=True, x_task_comparison=False, all_cells = False, animal='grom'):
     
     #6 class LDA: 
-    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = get_unbinned(test=test)
+    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = get_unbinned(test=test, all_cells=all_cells, animal=animal)
     
     # 100 ms bin size: 
     b = 100
-    kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt_sig = get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, b, smooth = 50)
+    kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt_sig = get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, b, smooth = 50,  animal=animal)
     #New -- binary kin signal
 
     #Smoosh together binary kin signals
@@ -2112,7 +2155,7 @@ def six_class_LDA(test=True, within_task_comparison=True, x_task_comparison=Fals
 
     b = 100
     B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
-        beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=b)
+        beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=b, animal=animal)
     
 
     CONF = dict()
@@ -2277,46 +2320,242 @@ def six_class_LDA(test=True, within_task_comparison=True, x_task_comparison=Fals
                     conf_day[master_nm[i], master_nm[j]] = tmp
         CONF[day] = conf_day
 
+    if all_cells:
+        sufx = '_all_cells'
+    else:
+        sufx = '_select_cells'
+
     if within_task_comparison:
         import pickle
-        pickle.dump(CONF, open('six_class_LDA_within_task_xval5.pkl', 'wb'))
+        pickle.dump(CONF, open('six_class_LDA_within_task_xval5'+sufx+'.pkl', 'wb'))
+    elif x_task_comparison:
+        import pickle
+        pickle.dump(CONF, open('six_class_LDA_x_task_compare_all6classes'+sufx+'.pkl', 'wb'))
+    else:
+        raise Exception
+
+def six_class_LDA_by_day(day, test=True, within_task_comparison=True, x_task_comparison=False, all_cells = False, animal='grom'):
+    
+    #6 class LDA: 
+    keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = get_unbinned(test=test, all_cells=all_cells, animal=animal, days=[day])
+    
+    # 100 ms bin size: 
+    b = 100
+    kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt_sig = get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, b, smooth = 50,  animal=animal)
+    #New -- binary kin signal
+
+    #Smoosh together binary kin signals
+    K_bin_master = {}
+    for i_d, day in enumerate(days):
+        kbn = []
+        for i_b, b in enumerate(blocks[i_d]):
+            kbn.append(bin_kin_signal[b, day])
+        K_bin_master[day] = np.vstack((kbn))
+
+    b = 100
+    B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
+        beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=b, animal=animal)
+    
+
+    CONF = dict()
+
+    K_bin = K_bin_master[day]
+    X = S_bin[day]
+    classes = np.zeros_like(X[:, :, 0])
+
+    #Label LFP indices: (1, 2, 3, 4)
+    for i in [84, 85, 86, 87]:
+        ix_ = np.nonzero(Params[day]['day_lfp_labs']==i)[0]
+        print ix_.shape, i
+        classes[ix_, :15] = i - 83
+
+
+    for i in range(classes.shape[0]):
+        for j in range(classes.shape[1]):
+            #Unlabeled: 
+            if classes[i, j] == 0:
+                #If abs(kin) > 0.5: 
+                if K_bin[i, j]:
+                    classes[i, j] = 6 #REACH
+                else:
+                    classes[i, j] = 5 #HOLD
+    
+        
+    ix1=np.nonzero(Params[day]['day_lfp_labs']>80)[0]
+    ix2 = np.nonzero(Params[day]['day_lfp_labs']<80)[0]
+
+    #USE only -500 ms : 1000 ms for NF, use -1500 ms : 1000 ms for manual control (limited data issue)
+    tix1 = np.arange(10, 25)
+    tix2 = np.arange(25)
+
+    master_ix = [ix1, ix2]
+    master_t_ix = [tix1, tix2]
+    master_nm = ['nf', 'mc']
+
+    conf_day = {}
+    for i, (ix_, tix_) in enumerate(zip(master_ix, master_t_ix)):
+        
+        #Train:      
+        magic_ix = np.ix_(ix_, tix_, np.arange(X.shape[2]))    
+        magic_ix2 = np.ix_(ix_, tix_)
+        x1 = X[magic_ix].reshape(len(ix_)*len(tix_), X.shape[2])
+        y1 = classes[magic_ix2].reshape(-1)
+
+        #For training on MC-- make sure enough hold data. Add more if needed (replication): 
+        if i == 1:
+            hold_ix = np.nonzero(y1==5)[0]
+            fact = int(len(y1)/float(len(hold_ix))) - 1
+            cat_y = np.zeros((len(hold_ix)*fact, )) + 5
+            cat_x = np.tile(x1[hold_ix, :], [fact, 1])
+            x1 = np.vstack((x1, cat_x))
+            y1 = np.hstack((y1, cat_y))
+
+        clf = sklearn.lda.LDA()
+        ch_clf = sklearn.lda.LDA()
+
+        if within_task_comparison:
+            #Xvalidate classifer by training on 80%, test on 20% of data: 
+
+            ix_xval = np.random.permutation(len(y1))
+            sub_tmp = np.zeros((6, 6))
+            n_corr = 0
+            n_tot = 0
+
+            n_ch_corr = 0
+            n_ch_tot = 0
+            for xval in range(5):
+                ix_test = ix_xval[(xval*len(y1)/5):((xval+1)*len(y1)/5)]
+                ix_train = np.array([ii for ii in range(len(y1)) if ii not in ix_test])
+                
+                #Fit w/ training data: 
+                clf.fit(x1[ix_train, :], y1[ix_train])
+                ch_clf.fit(x1[np.random.permutation(ix_train), :], y1[ix_train])
+
+                #Predict held-out data: 
+                y_hat = clf.predict(x1[ix_test, :])
+                y_hat_ch = ch_clf.predict(x1[np.random.permutation(ix_test), :])
+
+                #Get actual held-out data: 
+                y2 = y1[ix_test]
+
+                #Add to confusion matrix: 
+                for iii, (yi, y_hat_i) in enumerate(zip(y2, y_hat)):
+                    sub_tmp[yi-1, y_hat_i-1] += 1
+                    if yi == y_hat_i:
+                        n_corr += 1
+
+                    if yi == y_hat_ch[iii]:
+                        n_ch_corr += 1
+
+                    n_tot += 1
+
+            for iii in range(6):
+                sub_tmp[iii,:] = sub_tmp[iii, :]/float(np.sum(sub_tmp[iii,:]))
+            
+            conf_day[master_nm[i], master_nm[i], 'xval'] = sub_tmp
+            conf_day[master_nm[i], master_nm[i], 'perc_corr'] = (n_corr, n_tot)
+            conf_day[master_nm[i], master_nm[i], 'chance_perc_corr'] = (n_ch_corr, n_tot)
+
+        elif x_task_comparison:
+            # magic_ix_nf = np.ix_(ix1, np.arange(10, 15), np.arange(X.shape[2]))
+            # magic_ix_nf2 = np.ix_(ix1, np.arange(10, 15))
+            magic_ix_nf = np.ix_(ix1, np.arange(25), np.arange(X.shape[2]))
+            magic_ix_nf2 = np.ix_(ix1, np.arange(25))
+
+            magic_ix_mc = np.ix_(ix2, np.arange(25), np.arange(X.shape[2]))
+            magic_ix_mc2 = np.ix_(ix2, np.arange(25),)
+
+            x1_nf = X[magic_ix_nf].reshape(len(ix1)*len(np.arange(25)), X.shape[2])
+            y1_nf = classes[magic_ix_nf2].reshape(-1)
+
+            x1_mc = X[magic_ix_mc].reshape(len(ix2)*25, X.shape[2])
+            y1_mc = (classes[magic_ix_mc2].reshape(-1)) #Make MC labels from 5, 6  (hold, reach) --> 0, 1 (hold, reach)
+
+            clf.fit(x1_nf, y1_nf)
+            y_train_nf_fit_mc = clf.predict(x1_mc)
+
+            nf_trn = np.zeros((6, 6))
+            for iii, (yi_mc, yi_nf_clf) in enumerate(zip(y1_mc, y_train_nf_fit_mc)):
+                nf_trn[yi_mc-1, yi_nf_clf-1] += 1
+
+            clf.fit(x1_mc, y1_mc)
+            y_train_mc_fit_nf = clf.predict(x1_nf)
+
+            mc_trn = np.zeros((6, 6))
+            for iii, (yi_nf, yi_mc_clf) in enumerate(zip(y1_nf, y_train_mc_fit_nf)):
+                mc_trn[yi_nf-1, yi_mc_clf-1] += 1
+
+            conf_day['mc', 'nf', i] = mc_trn
+            conf_day['nf', 'mc', i] = nf_trn
+
+        else:
+
+            for j, jx_ in enumerate(zip(master_ix, master_t_ix)):
+
+                #Test: 
+                magic_jx = np.ix_(jx_, tix_, np.arange(X.shape[2]))    
+                magic_jx2 = np.ix_(jx_, tix_)
+
+                x2 = X[magic_jx].reshape(len(jx_)*len(tix_), X.shape[2])
+                y2 = classes[magic_jx2].reshape(-1)
+                y_hat = clf.predict(x2)
+
+                tmp = np.zeros((6, 6))
+                for iii, (yi, y_hat_i) in enumerate(zip(y2, y_hat)):
+                    tmp[yi-1, y_hat_i -1] += 1
+
+                for iii in range(6):
+                    tmp[iii,:] = tmp[iii, :]/float(np.sum(tmp[iii,:]))
+                
+                conf_day[master_nm[i], master_nm[j]] = tmp
+
+    if all_cells:
+        sufx = '_all_cells_'+day
+    else:
+        sufx = '_select_cells_'+day
+
+    if within_task_comparison:
+        import pickle
+        pickle.dump(conf_day, open('six_class_LDA_within_task_xval5'+sufx+'.pkl', 'wb'))
     if x_task_comparison:
         import pickle
-        pickle.dump(CONF, open('six_class_LDA_x_task_compare_all6classes.pkl', 'wb'))
+        pickle.dump(conf_day, open('six_class_LDA_x_task_compare_all6classes'+sufx+'.pkl', 'wb'))
     else:
-        import pickle
-        pickle.dump(CONF, open('six_class_LDA_train_test.pkl', 'wb'))
+        raise Exception
+    return conf_day
 
+def six_class_LDA_by_day_within(day):
+    conf_day = six_class_LDA_by_day(day, test=True, within_task_comparison=True, 
+        x_task_comparison=False, all_cells = False, animal='cart')
+    return conf_day
 
-
-        # f, ax = plt.subplots()
-        # f2, ax2 = plt.subplots()
-
-        # hold_cnt = 0
-        # hold_sum = 0
-        # reach_cnt = 0
-        # reach_sum = 0
-        # y2_pred_arr = y2_pred.reshape(178, 10)
-
-        # for i in range(6):
-        #     if i < 4:
-        #         hold_cnt += conf_mat[4, i]
-        #         hold_sum += conf_mat[4, i]*i
-                
-        #         reach_cnt += conf_mat[5, i]
-        #         reach_sum += conf_mat[5, i]*i
-
-        #     ax.bar(i, conf_mat[4, i], color='b', alpha=0.5, width=0.4)
-        #     ax.bar(i+.5, conf_mat[5, i], color='r', alpha=0.5, width=0.4)
-
-        #     #Mean time in trial: 
-        #     ix, iy = np.nonzero(y2_pred_arr==i+1)
-        #     n, x_ = np.histogram(iy, np.linspace(-.5, 9.5, 11))
-        #     print np.mean(iy), ix.shape, iy.shape
-        #     ax2.plot(x_[:-1]+0.5, n/float(np.sum(n)), label=str(i))
-        # ax2.legend()
+def six_class_LDA_by_day_across(day):
+    conf_day = six_class_LDA_by_day(day, test=True, within_task_comparison=False, 
+        x_task_comparison=True, all_cells = False, animal='cart')
+    return conf_day
 
 if __name__ ==  "__main__":
+    days = ['011315', '011415', '011515', '011615']
+    pool1 = mp.Pool()
+    results1 = pool1.map(six_class_LDA_by_day_within, days)
+    CONF = {}
+    for i_d, day in enumerate(days):
+        CONF[day] = results1[i_d]
+    pickle.dump(CONF, open('six_class_LDA_within_task_xval5_all_cells_mp_attempt.pkl', 'wb'))
+
+    print '####### within --> across days ########'
+    print '####### within --> across days ########'
+    print '####### within --> across days ########'
+    print '####### within --> across days ########'
+
+    days = ['011315', '011415', '011515', '011615']
+    pool2 = mp.Pool()
+    results2 = pool2.map(six_class_LDA_by_day_across, days)
+    CONF = {}
+    for i_d, day in enumerate(days):
+        CONF[day] = results2[i_d]
+    pickle.dump(CONF, open('six_class_LDA_x_task_compare_all6classes_all_cells_mp_attempt.pkl', 'wb'))
+
     # lda = False
     # if lda: 
     #     print 'LDA beta: '
@@ -2330,12 +2569,12 @@ if __name__ ==  "__main__":
     #     for b in binsizes:
     #         print 'starting bin: ', b
     #         # #Bin / smooth spike and beta dictionaries
-            B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
-                beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=b)
+    #         B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
+    #             beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=b)
 
-    #           #Get kin signal
-            kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = get_kin(days, 
-                blocks, bef, aft, go_times_dict, lfp_lab, b, smooth = 50)
+    # #           #Get kin signal
+    #         kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = get_kin(days, 
+    #             blocks, bef, aft, go_times_dict, lfp_lab, b, smooth = 50)
 
     #         #kin_signal_dict = {}
     #         #binned_kin_signal_dict = {}
