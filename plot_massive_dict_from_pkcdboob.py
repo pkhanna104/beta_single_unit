@@ -55,25 +55,25 @@ def plot_(massive_dict):
 			x0 = np.hstack((measures['mc', '', 'off']))
 			x1 = np.hstack((measures['mc', '', 'on']))
 			print 'mc actual: '
-			ax[i/2, i%2].set_ylim([0., 8])
+			#ax[i/2, i%2].set_ylim([0., 8])
 			ymax = 7.5
 		if i == 1:
 			x0 = np.hstack((measures['mc', '_hat', 'off']))
 			x1 = np.hstack((measures['mc', '_hat', 'on']))
 			print 'mc hat'
-			ax[i/2, i%2].set_ylim([0., 8])
+			#ax[i/2, i%2].set_ylim([0., 8])
 			ymax = 7.5
 		if i == 2:
 			x0 = np.hstack((measures['nf', '', 'off']))
 			x1 = np.hstack((measures['nf', '', 'on']))
 			print 'nf actual'
-			ax[i/2, i%2].set_ylim([0., 4])
+			#ax[i/2, i%2].set_ylim([0., 4])
 			ymax = 3.5
 		if i==3:
 			x0 = np.hstack((measures['nf', '_hat', 'off']))
 			x1 = np.hstack((measures['nf', '_hat', 'on']))
 			print 'nf hat'
-			ax[i/2, i%2].set_ylim([1.5, 4])
+			#ax[i/2, i%2].set_ylim([1.5, 4])
 			ymax = 3.5
 		t, p = scipy.stats.ttest_rel(x0, x1)
 		print p, t, len(x0), len(x1)

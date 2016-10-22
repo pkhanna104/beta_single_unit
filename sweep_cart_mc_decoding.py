@@ -359,6 +359,11 @@ def plot_tested_lda(mc_test=False):
             y0.append(dat['yhat', blk][kix0[bix0]])
             y1.append(dat['yhat', blk][kix0[bix1]])
 
+            sum_days[i_d, 0, 0] += np.sum(np.abs(dat['yhat', blk][kix0[bix0]]-1))
+            sum_days[i_d, 0, 1] += np.sum(np.abs(dat['yhat', blk][kix0[bix0]]))
+            sum_days[i_d, 1, 0] += np.sum(np.abs(dat['yhat', blk][kix0[bix1]]-1))
+            sum_days[i_d, 1, 1] += np.sum(np.abs(dat['yhat', blk][kix0[bix1]]))
+
         mn0 = np.mean(np.hstack((y0)))
         st0 = np.std(np.hstack((y0)))/np.sqrt(len(np.hstack((y0))))
         
