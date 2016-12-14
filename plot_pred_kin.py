@@ -677,6 +677,16 @@ def plot_6class_lda_xval_within_task(fname='six_class_LDA_within_task_xval5.pkl'
     nf_perf = []
     f2, ax2 = plt.subplots()
 
+    binom = {}
+    binom['mc_corr'] = 0
+    binom['mc_ch'] = 0
+    binom['mc_n'] = 0
+
+    binom['nf_corr'] = 0
+    binom['nf_ch'] = 0
+    binom['nf_n'] = 0
+
+
     x = dict()
     for i in [0, 1, 3, 4]:
         x[i] = []
@@ -705,32 +715,41 @@ def plot_6class_lda_xval_within_task(fname='six_class_LDA_within_task_xval5.pkl'
         ax[1].set_yticklabels(lab[-1:0:-1])
 
         perc_corr_mc = dat[d]['mc','mc', 'perc_corr']
-        perc_corr_mc = float(perc_corr_mc[0])/perc_corr_mc[1]
-        mc_perf.append(perc_corr_mc)
+        perc_corr_mc2 = float(perc_corr_mc[0])/perc_corr_mc[1]
+        mc_perf.append(perc_corr_mc2)
+        binom['mc_corr'] += perc_corr_mc[0]
 
         perc_corr_mc_ch = dat[d]['mc','mc', 'chance_perc_corr']
-        perc_corr_mc_ch = float(perc_corr_mc_ch[0])/perc_corr_mc_ch[1]
-        mc_ch.append(perc_corr_mc_ch)
+        perc_corr_mc_ch2 = float(perc_corr_mc_ch[0])/perc_corr_mc_ch[1]
+        mc_ch.append(perc_corr_mc_ch2)
+        binom['mc_ch'] += perc_corr_mc_ch[0]
+
+        assert perc_corr_mc_ch[1]==perc_corr_mc[1]
+        binom['mc_n'] += perc_corr_mc_ch[1]
 
         perc_corr_nf = dat[d]['nf','nf', 'perc_corr']
-        perc_corr_nf = float(perc_corr_nf[0])/perc_corr_nf[1]
-        nf_perf.append(perc_corr_nf)
+        perc_corr_nf2 = float(perc_corr_nf[0])/perc_corr_nf[1]
+        nf_perf.append(perc_corr_nf2)
+        binom['nf_corr'] += perc_corr_nf[0]
 
         perc_corr_nf_ch = dat[d]['nf','nf', 'chance_perc_corr']
-        perc_corr_nf_ch = float(perc_corr_nf_ch[0])/perc_corr_nf_ch[1]
-        nf_ch.append(perc_corr_nf_ch)
+        perc_corr_nf_ch2 = float(perc_corr_nf_ch[0])/perc_corr_nf_ch[1]
+        nf_ch.append(perc_corr_nf_ch2)
+        binom['nf_ch'] += perc_corr_nf_ch[0]
+        assert perc_corr_nf_ch[1]==perc_corr_nf[1]
+        binom['nf_n'] += perc_corr_nf_ch[1]
 
-        ax[2].bar(0, perc_corr_mc, color='red')
-        x[0].append(perc_corr_mc)
+        ax[2].bar(0, perc_corr_mc2, color='red')
+        x[0].append(perc_corr_mc2)
 
-        ax[2].bar(1, perc_corr_mc_ch, color='red', alpha=.5)
-        x[1].append(perc_corr_mc_ch)
+        ax[2].bar(1, perc_corr_mc_ch2, color='red', alpha=.5)
+        x[1].append(perc_corr_mc_ch2)
 
-        ax[2].bar(3, perc_corr_nf, color='blue')
-        x[3].append(perc_corr_nf)
+        ax[2].bar(3, perc_corr_nf2, color='blue')
+        x[3].append(perc_corr_nf2)
 
-        ax[2].bar(4, perc_corr_nf_ch, color='blue', alpha=.5)
-        x[4].append(perc_corr_nf_ch)
+        ax[2].bar(4, perc_corr_nf_ch2, color='blue', alpha=.5)
+        x[4].append(perc_corr_nf_ch2)
 
         ax[2].set_xticks([.5, 1.5, 3.5, 4.5])
         ax[2].set_xticklabels(['MC Perc. Corr.', 'MC Chance', 'NF Perc. Corr', 'NF Chance'])
@@ -741,6 +760,13 @@ def plot_6class_lda_xval_within_task(fname='six_class_LDA_within_task_xval5.pkl'
     t2, p2 = scipy.stats.ttest_rel(nf_perf, nf_ch)
     print 'mc repated measures ttest: ', p1, t1
     print 'nf repated measures ttest: ', p2, t2
+
+    # Binomial Test #
+    pv = scipy.stats.binom_test(binom['mc_ch'], binom['mc_n'], binom['mc_corr']/float(binom['mc_n']))    
+    pv2 = scipy.stats.binom_test(binom['nf_ch'], binom['nf_n'], binom['nf_corr']/float(binom['nf_n']))  
+
+    print 'binomial test: ', ' manual control: ', pv, binom['mc_n'], 'nf: ', pv2, binom['nf_n']
+
     ax2.bar(0, np.mean(x[0]), color='red')
     ax2.bar(1, np.mean(x[1]), color='red', alpha=0.5)
     ax2.bar(3, np.mean(x[3]), color='blue')
@@ -750,7 +776,7 @@ def plot_6class_lda_xval_within_task(fname='six_class_LDA_within_task_xval5.pkl'
     ax2.set_ylabel('LDA Percent Correct')
     plt.tight_layout()
 
-def plot_6class_lda_x_tasks(fname):
+def plot_6class_lda_x_tasks(fname, save=False):
     #cmap = ['maroon', 'firebrick', 'orangered', 'darksalmon', 'powderblue', 'lightslategrey']
     cmap = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
     dat = pickle.load(open(fname))
@@ -758,6 +784,9 @@ def plot_6class_lda_x_tasks(fname):
 
     hld_mn = []
     rch_mn = []
+
+    heeld = []
+    reech = []
 
     for i_d, d in enumerate(np.sort(dat.keys())):
         data_mats = dat[d]
@@ -792,7 +821,10 @@ def plot_6class_lda_x_tasks(fname):
         ax.errorbar([0+(0.1*rnd), 1+(0.1*rnd)], sm_arr, yerr=err_arr, color=tuple(np.array(cmap[i_d])/255.), label=lab, linewidth=5)
         print np.mean(rch)-np.mean(hold), np.median(rch)-np.median(hold), 'p: ', p
         hld_mn.append(np.mean(hold))
+        heeld.append(hold)
+
         rch_mn.append(np.mean(rch))
+        reech.append(rch)
 
         data_trn_nf = data_mats['nf', 'mc', ix].T
         sm_arr = []
@@ -810,7 +842,7 @@ def plot_6class_lda_x_tasks(fname):
 
     #print repeated measures ttest: 
     t, p = scipy.stats.ttest_rel(hld_mn, rch_mn)
-    print 'repated ttest: ', p, t
+    print 'repeated ttest: ', p, t
     ax.set_xticks([0, 1])
     ax.set_xticklabels(['Hold', 'Reach'])
     ax.set_xlim([-.5, 1.5, ])
@@ -818,7 +850,39 @@ def plot_6class_lda_x_tasks(fname):
     #ax.set_title('Train with MC, Test with NF')
     ax.legend(loc=3,fontsize=14)
     plt.tight_layout()
-    plt.savefig('/Users/preeyakhanna/Dropbox/Carmena_Lab/Documentation/NeuronPaper/JNeuroDraft/6classes_lda_trn_mc_test_nf_rel_ttest_xoffs.eps', format='eps', dpi=300)
+ 
+    p = []
+    p2 = []
+    reech = np.hstack((reech))
+    heeld = np.hstack((heeld))
+
+    for i in np.unique(reech):
+        ix = np.nonzero(reech==i)[0]
+        p.append(len(ix))
+
+        ix2 = np.nonzero(heeld==i)[0]
+        p2.append(len(ix2))
+
+    p = np.array(p)
+    n_p = float(np.sum(p))
+
+    p2 = np.array(p2)
+    n_p2 = float(np.sum(p2))
+
+    if n_p < n_p2:
+        p2_adj = p2/n_p2*n_p
+        p1_adj = p
+    elif n_p >= n_p2:
+        p2_adj = p2
+        p1_adj = p/n_p*n_p2
+
+    chai, pv = scipy.stats.chisquare(p1_adj.astype(int), p2_adj.astype(int))
+    print 'multinomial: ', chai, pv, sum(p), '<-- fast', sum(p2), '<-- slow'
+
+
+
+    if save:
+        plt.savefig('/Users/preeyakhanna/Dropbox/Carmena_Lab/Documentation/NeuronPaper/JNeuroDraft/6classes_lda_trn_mc_test_nf_rel_ttest_xoffs.eps', format='eps', dpi=300)
 
 
 

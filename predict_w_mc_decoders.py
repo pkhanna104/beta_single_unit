@@ -25,9 +25,10 @@ def train_mc_full_test_nf_full(animal, test=False, plot=False, day='022815', all
     keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, 
         days=[day], blocks=blocks, animal=animal, all_cells=all_cells, mc_indicator=['1'])
 
-    b=100
+    b=25
     print 'decoder dict starting for ', day, ' using days: ', days
-    decoder_dict = predict_kin_w_spk.get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_only=True, kin_type='endpt', animal=animal, binsize=b)
+    decoder_dict = predict_kin_w_spk.get_kf_trained_from_full_mc(keep_dict, days, blocks, mc_indicator, decoder_only=True, kin_type='endpt', \
+        animal=animal, binsize=b, include_speed=True)
 
     import pickle
     pickle.dump(decoder_dict, open(day+'_decoder_dict.pkl', 'wb'))
@@ -99,7 +100,12 @@ def train_mc_full_test_nf_full(animal, test=False, plot=False, day='022815', all
 
                 z = np.zeros((len(kin), ))
                 kin_vel = kin[:, [2,3]]
-                kin_full = np.vstack((kin[:, 0], z, kin[:, 1], kin[:, 2], z, kin[:,3])).T
+                if include_speed:
+                    spd = np.sum(kin_vel**2, axis=1)
+                    kin_vel = np.hstack((kin[:, [2]], spd[:, np.newaxis], kin[:, [3]]))
+                    kin_full = np.vstack((kin[:, 0], z, kin[:, 1], kin[:, 2], spd, kin[:,3])).T
+                else:
+                    kin_full = np.vstack((kin[:, 0], z, kin[:, 1], kin[:, 2], z, kin[:,3])).T
 
                 try:
                     k_new = (str(binsize), k[1], 'a', 'kf')

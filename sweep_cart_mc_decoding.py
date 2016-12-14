@@ -338,7 +338,7 @@ def plot_tested_lda(mc_test=False):
 
     days = ['011315', '011415', '011515', '011615']
     mn_days = []
-    sum_days = np.zeros((4, 2, 2))
+    sum_days = np.zeros((4, 2, 2)) #Days x beta-off/on x slow/fast
     for i_d, day in enumerate(days):
         if mc_test:
             dat = pickle.load(open('day_'+day+'_lda_res_mctest.pkl'))
@@ -359,10 +359,12 @@ def plot_tested_lda(mc_test=False):
             y0.append(dat['yhat', blk][kix0[bix0]])
             y1.append(dat['yhat', blk][kix0[bix1]])
 
-            sum_days[i_d, 0, 0] += np.sum(np.abs(dat['yhat', blk][kix0[bix0]]-1))
-            sum_days[i_d, 0, 1] += np.sum(np.abs(dat['yhat', blk][kix0[bix0]]))
-            sum_days[i_d, 1, 0] += np.sum(np.abs(dat['yhat', blk][kix0[bix1]]-1))
-            sum_days[i_d, 1, 1] += np.sum(np.abs(dat['yhat', blk][kix0[bix1]]))
+            sum_days[i_d, 0, 0] += np.sum(np.abs(dat['yhat', blk][kix0[bix0]]-1)) # beta-off, assigned slow
+            sum_days[i_d, 0, 1] += np.sum(np.abs(dat['yhat', blk][kix0[bix0]])) #beta-off, assigned fast
+            sum_days[i_d, 1, 0] += np.sum(np.abs(dat['yhat', blk][kix0[bix1]]-1)) #beta-on, assigned slow
+            sum_days[i_d, 1, 1] += np.sum(np.abs(dat['yhat', blk][kix0[bix1]])) #beta-on, assigned fast
+
+
 
         mn0 = np.mean(np.hstack((y0)))
         st0 = np.std(np.hstack((y0)))/np.sqrt(len(np.hstack((y0))))
@@ -377,7 +379,29 @@ def plot_tested_lda(mc_test=False):
 
     sides = np.vstack((mn_days))
     t, p = stats.ttest_rel(sides[:, 0], sides[:, 1])
-    print t, p
+    print t, p, '< -- scipy.ttest paired'
+
+    #Binomial test:
+    X = np.sum(sum_days, axis=0)
+
+    #Percent expected to be fast based on beta-off:
+    p_fast_beta_off = X[0, 1] / float(X[0, 0]+X[0, 1])
+    p_fast_beta_on = X[1, 1] / float(X[1, 0]+X[1, 1])
+
+    #Number fast in beta-on:
+    n_fast_beta_on = X[1, 1]
+    n_fast_beta_off = X[0, 1]
+
+    #Number in beta-on:
+    n_beta_on = X[1, 0] + X[1, 1]
+    n_beta_off = X[0, 0] + X[0, 1]
+
+    p_binom = stats.binom_test(n_fast_beta_on, n_beta_on, p_fast_beta_off)
+    print 'binomial test, p=fast,beta-off', p_binom, ' n beta on', n_beta_on
+
+    p_binom2 = stats.binom_test(n_fast_beta_off, n_beta_off, p_fast_beta_on)
+    print 'binomial test, p=fast,beta-on', p_binom2, ' n beta off', n_beta_off
+        
 
     if mc_test:
         ax.plot([0, 0], [.5, .52], 'k-', linewidth=2)
