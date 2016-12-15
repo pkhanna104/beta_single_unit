@@ -78,7 +78,7 @@ def get_binary_events(animal='grom'):
 
     for i_d, d in enumerate(days):
         srch1 = '2016-10-1*'+d+'_25_cts_KF.pkl'
-        srch2 = '2016-10-1*'+d+'_25_cts_KF.pkl'
+        srch2 = '2016-10-14*'+d+'_25_cts_KF.pkl'
         
         fnm1 = glob.glob(srch1)
         fnm2 = glob.glob(srch2)

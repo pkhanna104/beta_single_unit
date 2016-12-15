@@ -150,8 +150,8 @@ def get_go_times_grom(t, mci):
     if int(mci) == 1:
         go_ix = rew_ix - 4
         ix_valid = np.nonzero(go_ix >=0)[0]
-        lfp_lab[b, day] = strobed[rew_ix[ix_valid] - 6, 1]
-        rt_dict[b, day] = strobed[go_ix[ix_valid]+1, 0] - strobed[go_ix[ix_valid], 0]
+        lfp_lab = strobed[rew_ix[ix_valid] - 6, 1]
+        rt_dict = strobed[go_ix[ix_valid]+1, 0] - strobed[go_ix[ix_valid], 0]
     
     else:
         go_ix = rew_ix - 3

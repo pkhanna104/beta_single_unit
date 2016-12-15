@@ -46,7 +46,14 @@ def get_beta_bursts(keep_dict, days, blocks, mc_indicator, perc_beta=60, bp_filt
 
             #Get amplitude of filtered signal: 
             try:
-                sig = np.abs(scipy.signal.hilbert(data_filt, N=None, axis=1))
+                npow2 = 1;
+                while npow2 < data_filt.shape[1]:
+                    npow2 *= 2
+                data_filt_app = np.hstack(( data_filt, np.zeros((data_filt.shape[0], npow2 - data_filt.shape[1]))))
+                hilbert_data_filt = scipy.signal.hilbert(data_filt_app, N=None, axis=1)
+                hilbert_data_filt = hilbert_data_filt[:, :data_filt.shape[1]]
+                sig = np.abs(hilbert_data_filt)
+                
             except:
                 print b, d, 'error in state_space_w_beta_bursts, get_beta_bursts function'
             sig_bin = np.zeros_like(sig)
@@ -65,7 +72,7 @@ def get_beta_bursts(keep_dict, days, blocks, mc_indicator, perc_beta=60, bp_filt
 
             beta_dict[b, d] = sig_bin_filt
             beta_dict_cont[b, d] = sig
-            beta_dict_cont[b, d, 'phz'] = np.angle(scipy.signal.hilbert(data_filt, N=None, axis=1))
+            beta_dict_cont[b, d, 'phz'] = np.angle(hilbert_data_filt)
             beta_dict_cont[b, d, 'filt'] = data_filt
     if save:
         save_dict = dict(spk_dict=spk_dict, lfp_dict=lfp_dict, lfp_lab=lfp_lab, blocks=blocks,

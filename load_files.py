@@ -7,7 +7,8 @@ import glob
 import tables
 
 extensions = ['resort_all_all', 'resort_all_sub_all', 'resort_all']
-master_save_directory = '/Volumes/My Book/pk/resorted_grom2015_mat'
+#master_save_directory = '/Volumes/My Book/pk/resorted_grom2015_mat'
+master_save_directory = '/media/lab/My Book/pk/resorted_grom2015_mat'
 #cart_save_directory = '/Volumes/My Book/pk/cart_2015'
 cart_save_directory = '/media/lab/My Book/pk/cart_2015'
 
