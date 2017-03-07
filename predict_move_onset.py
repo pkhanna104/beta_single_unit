@@ -218,9 +218,9 @@ def get_all_days(animal, bin, lags):
         pickle.dump(d_dict, open('/home/lab/code/beta_single_unit/c_data/'+animal+'_'+day+'_'+str(bin)+'_lag_'+str(lags)+'_logistic_regression_dict.pkl', 'wb'))
     pickle.dump(master_dict, open('/home/lab/code/beta_single_unit/c_data/'+animal+'_'+str(bin)+'_lag_'+str(lags)+'_master_logistic_regression_dict.pkl', 'wb'))
 
-def plot_co_traj(animal, bin=100):
+def plot_co_traj(animal, bin, lags):
 
-    srch_str = '/home/lab/code/beta_single_unit/c_data/'+animal+'_'+str(bin)+'_master*'
+    srch_str = '/home/lab/code/beta_single_unit/c_data/'+animal+'_'+str(bin)+'_lag_'+str(lags)+'_master*'
     import glob
     fnm = glob.glob(srch_str)
 
@@ -302,6 +302,71 @@ def plot_chance_all(dat):
     ax.errorbar(1+.3, np.mean(co_ch), yerr=np.std(co_ch)/np.sqrt(len(co_ch)), color='k')
     ax.errorbar(2+.3, np.mean(nf_perf), yerr=np.std(nf_perf)/np.sqrt(len(nf_perf)), color='k')
     ax.errorbar(3+.3, np.mean(nf_ch),  yerr=np.std(nf_ch)/np.sqrt(len(nf_ch)), color='k')
+
+def plot_perc_all(dat, offs=0):
+    f, ax = plt.subplots()
+
+    co_0 = []
+    co_1 = []
+
+    nf_0 = []
+    nf_1 = []
+
+    days = dat.keys()
+    for i_d, dy in enumerate(np.sort(days)):
+        d = dat[dy][0]
+        co_ = d['co_label']
+
+        ix0 = np.nonzero(co_==0)[0]
+        ix1 = np.nonzero(co_ ==1)[0]
+
+        co_0.append(d['score_co'][ix0])
+        co_1.append(d['score_co'][ix1])
+
+        nf_ = d['nf_label']
+        ix0 = np.nonzero(nf_==0)[0]
+        ix1 = np.nonzero(nf_==1)[0]
+
+        nf_0.append(d['score_nf'][ix0])
+        nf_1.append(d['score_nf'][ix1])
+
+
+        fpr = dict()
+        tpr = dict()
+        roc_auc = dict()
+        
+        fpr, tpr, _ = sklearn.metrics.roc_curve(d['co_label'], d['score_co']) 
+        roc_auc =  sklearn.metrics.auc(fpr, tpr)
+        #print 'co auc: ', roc_auc
+
+        fpr, tpr, _ = sklearn.metrics.roc_curve(d['nf_label'], d['score_nf']) 
+        roc_auc =  sklearn.metrics.auc(fpr, tpr)
+        #print 'nf auc: ', roc_auc
+
+    co00 = np.array([np.mean(co) for co in co_0])
+    co11 = np.array([np.mean(co) for co in co_1])
+    nf00 = np.array([np.mean(co) for co in nf_0])
+    nf11 = np.array([np.mean(co) for co in nf_1])
+
+    print 'CO ttest:', scipy.stats.ttest_rel(co00, co11) , 'n = ', len(co00), len(co11)
+    print 'NF ttest:', scipy.stats.ttest_rel(nf00, nf11) , 'n= ', len(nf00), len(nf11)
+
+    co0 = np.hstack((co_0))
+    co1 = np.hstack((co_1))
+    nf0 = np.hstack((nf_0))
+    nf1 = np.hstack((nf_1))
+
+
+
+    ax.bar(0, np.mean(co0)-offs, color='blue', width = .6)
+    ax.bar(1, np.mean(co1)-offs, color='blue', width = .6)
+    ax.bar(2, np.mean(nf0)-offs, color='red', width = .6)
+    ax.bar(3, np.mean(nf1)-offs, color='red', width = .6)
+    
+    ax.errorbar(0+.3, np.mean(co0)-offs, yerr=np.std(co0)/np.sqrt(len(co0)), color='k')
+    ax.errorbar(1+.3, np.mean(co1)-offs, yerr=np.std(co1)/np.sqrt(len(co1)), color='k')
+    ax.errorbar(2+.3, np.mean(nf0)-offs, yerr=np.std(nf0)/np.sqrt(len(nf0)), color='k')
+    ax.errorbar(3+.3, np.mean(nf1)-offs,  yerr=np.std(nf1)/np.sqrt(len(nf1)), color='k')
 
 def plot_pretty_traj(dat, day, binsize):
     
@@ -437,10 +502,14 @@ def bar_plots(axi, d, cmap2, tsk='nf', sort_by_targ=False):
         axi.bar(L, beta_tg[L]/float(beta_cnt[L]))
     return axi
 
-def line_plots_all(dat):
+def line_plots_all(dat, offs=0.0):
     days = dat.keys()
     f, axi = plt.subplots()
     for it, tsk in enumerate(['co', 'nf']):
+        tskd = dict()
+        tskd[0] = []
+        tskd[1] = []
+
         for i_d, dy in enumerate(days):
             d = dat[dy][0]
 
@@ -463,12 +532,22 @@ def line_plots_all(dat):
             B0 = beta_tg[0]
             B1 = beta_tg[1]
 
-            axi.plot(np.array([0, 1])+(2*it), [np.mean(B0), np.mean(B1)], '.-',
+            axi.plot(np.array([0, 1])+(2*it), [np.mean(B0)-offs, np.mean(B1)-offs], '.-',
                 color=np.array(cmap1[i_d])/255.)
 
-            axi.errorbar(np.array([0, 1])+(2*it), [np.mean(B0), np.mean(B1)], 
+
+            axi.errorbar(np.array([0, 1])+(2*it), [np.mean(B0)-offs, np.mean(B1)-offs], 
                 yerr=np.array([np.std(B0)/np.sqrt(len(B0)), np.std(B1)/np.sqrt(len(B1))]),
                 color=np.array(cmap1[i_d])/255.)
+
+            tskd[0].append(np.mean(B0))
+            tskd[1].append(np.mean(B1))
+
+        print tsk+ ' ttest:', scipy.stats.ttest_rel(tskd[0], tskd[1]) , 'n = ', len(tskd[0]), len(tskd[1])
+
+
+    axi.set_xlabel('CO, NF')
+    axi.set_ylabel('Distance from Thresh')
             
 def traj_plot(axi, d, cmap2):
     co_trls = np.unique(d['co_tm_trl_key'][:, 1])
