@@ -1193,7 +1193,6 @@ def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal
         import state_space_w_beta_bursts as ssbb
         B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
             beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=binsize, animal='grom')
-        
         kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, 
             go_times_dict, lfp_lab, binsize, smooth = 50, animal='grom')
 
@@ -1223,12 +1222,22 @@ def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal
             Spd_Day.append(np.sqrt(spd[:, 2, :]**2 +spd[:,3,:]**2 ))
         Kin_Day = np.vstack((Kin_Day))
         Spd_Day = np.vstack((Spd_Day))
+
+        boot_same_diff_win_task_mc = np.zeros((2, ))
+        boot_same_diff_win_task_bt = np.zeros((2, ))
+        boot_same_diff_x_task = np.zeros((2, ))
+        adj_same_diff = np.zeros((2, ))
+        mcnemar = np.zeros((2, 2)) # win (diff, same), across (diff, same)
+        n_units = 0
         perc_same_diff = np.zeros((2, ))
 
         for iu, un in enumerate(Params[d]['sorted_un']):
             lfp_lab2 = Params[d]['day_lfp_labs']
 
+            # NF:
             ix = np.nonzero(np.logical_and(lfp_lab2 > 80, lfp_lab2<=87))[0]
+
+            # CO: 
             ix2 = np.nonzero(np.logical_or(lfp_lab2==88, lfp_lab2<80))[0] #RT PSTH changed all 64s to 88s. Oops
 
             spk = {}
@@ -1240,34 +1249,109 @@ def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal
                     mc_hold = np.nonzero(np.logical_and(Beta_Day[t,:] == 1, Kin_Day[t, :]==0))[0]
                     if len(mc_hold) > 0:
                         spk['mc'].append(Spk_Day[t, mc_hold, iu])
-                    else:
-                        print 'skipping ', t
+                        #print 'skipping ', t
+
                 elif t in ix2:
                     beta_hold = np.nonzero(np.logical_and(Beta_Day[t,:] == 1, Kin_Day[t, :]==0))[0]
                     if len(beta_hold) > 0:
                         spk['beta'].append(Spk_Day[t, beta_hold, iu])
-                    else:
-                        print 'skipping ', t
-
-
             mc = np.hstack((spk['mc']))
             bt = np.hstack((spk['beta']))
-            if np.logical_and(np.mean(mc)/.1 > 5., np.mean(bt)/.1 > .5):
-                print 'sizes: ', mc.shape, bt.shape
 
-                u1, p1 = scipy.stats.mannwhitneyu(mc, bt)
-                if p1 < 0.05:
-                    perc_same_diff[1] += 1
+            # Adjacency: 
+            n_adj = np.floor(np.min([len(bt), len(mc)])/3.).astype(int)
+            mc_end = mc[-n_adj:]
+            bt_st = bt[:n_adj]
+            uadj, padj= scipy.stats.mannwhitneyu(mc_end, bt_st)
+            if padj < 0.05:
+                adj_same_diff[1]+=1
+            else:
+                adj_same_diff[0]+=1
+
+            # Bootstrapped: 
+            n_mc = len(mc)/n_adj
+            n_bt = len(bt)/n_adj
+
+            if np.logical_and(np.mean(mc)/.1 > 5., np.mean(bt)/.1 > .5):
+                #print 'sizes: ', mc.shape, bt.shape
+                n_units += 1
+                # Within: 
+                nsigwin = 0
+                nwin = 0
+                for nmc in range(n_mc):
+                    mc_i = mc[nmc*n_adj:(nmc+1)*n_adj]
+
+                    for nmci in range(nmc+1, n_mc):
+                        mc_ii = mc[nmci*n_adj:(nmci+1)*n_adj]
+
+                        uwi, pwi= scipy.stats.mannwhitneyu(mc_i, mc_ii)
+                        if pwi < 0.05:
+                            boot_same_diff_win_task_mc[1]+=1
+                            nsigwin += 1
+                        else:
+                            boot_same_diff_win_task_mc[0]+=1
+                        nwin += 1
+
+                for nbt in range(n_bt):
+                    bt_i = bt[nbt*n_adj:(nbt+1)*n_adj]
+
+                    for nbti in range(nbt+1, n_bt):
+                        bt_ii = bt[nbti*n_adj:(nbti+1)*n_adj]
+
+                        uwi, pwi= scipy.stats.mannwhitneyu(bt_i, bt_ii)
+                        if pwi < 0.05:
+                            boot_same_diff_win_task_bt[1]+=1
+                            nsigwin+=1
+                        else:
+                            boot_same_diff_win_task_bt[0]+=1   
+                        nwin += 1                     
+
+                # X: 
+                nsigx = 0
+                nx = 0
+                for nbt in range(n_bt):
+                    bt_i = bt[nbt*n_adj:(nbt+1)*n_adj]
+
+                    for nmc in range(n_mc):
+                        mc_i = mc[nmc*n_adj:(nmc+1)*n_adj]
+
+                        uwi, pwi= scipy.stats.mannwhitneyu(bt_i, mc_i)
+                        if pwi < 0.05:
+                            boot_same_diff_x_task[1]+=1 
+                            nsigx += 1
+                        else:
+                            boot_same_diff_x_task[0]+=1 
+                        nx += 1
+
+                perc_win = nsigwin/float(nwin)
+                if perc_win > .5:
+                    perc_win = 1
                 else:
-                    perc_same_diff[0] += 1
-        ax.bar(i_d+.1, perc_same_diff[1]/float(np.sum(perc_same_diff)), color=tuple(np.array(cmap[i_d])/255.))
-        ax.text(i_d+.5, .1+perc_same_diff[1]/float(np.sum(perc_same_diff)), 'n='+str(iu+1), fontsize=16,horizontalalignment='center')
+                    perc_win = 0
+
+                perc_x = nsigx/float(nx)
+                if perc_x > .5:
+                    perc_x = 1
+                else:
+                    perc_x = 0
+
+                mcnemar[perc_x, perc_win] += 1
+
+        import statsmodels.sandbox.stats.runs as sssr
+        stats, pv = sssr.mcnemar(mcnemar)
+        print d, ', mcnemar: ', pv, stats
+
+        #ax.bar(i_d+.1, adj_same_diff[1]/float(np.sum(adj_same_diff)), .2, color=tuple(np.array(cmap[i_d])/255.))
+        ax.bar(i_d+.1, boot_same_diff_x_task[1]/float(np.sum(boot_same_diff_x_task)), .4, color=tuple(np.array(cmap[i_d])/255.))
+        ax.bar(i_d+.5, (boot_same_diff_win_task_mc[1]+boot_same_diff_win_task_bt[1])/float(np.sum(boot_same_diff_win_task_bt) + np.sum(boot_same_diff_win_task_mc)),
+            .4, color=tuple(np.array(cmap[i_d])/255.))
+        ax.text(i_d+.5, .1+boot_same_diff_x_task[1]/float(np.sum(boot_same_diff_x_task)), 'n='+str(n_units), fontsize=16,horizontalalignment='center')
     ax.set_ylabel('Percent of Units')
     ax.set_xticks(np.arange(6)+0.5)
     ax.set_xticklabels(days, rotation='vertical')
     ax.set_ylim([0, 1.])
     plt.tight_layout()
-    plt.savefig('/Users/preeyakhanna/Dropbox/Carmena_Lab/Documentation/NeuronPaper/JNeuroDraft/g_perc_sig_diff_FR_beta_vs_NF_hold_beta_events_on_to_targ64_100ms_bins.eps', format='eps', dpi=300)
+    plt.savefig('/Users/preeyakhanna/Dropbox/Carmena_Lab/Documentation/NeuronPaper/JNeuroDraft/g_perc_sig_diff_FR_beta_vs_NF_hold_beta_events_on_to_targ64_100ms_bins_mcnewar.eps', format='eps', dpi=300)
 
 def entropy_phase(train_ix, test_ix, day_bc, Params_day):
     f, ax = plt.subplots()
