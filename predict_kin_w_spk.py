@@ -44,7 +44,7 @@ import un2key
 import re
 import scipy.io as sio
 import scipy.signal
-import sav_gol_filt as sg_filt
+from utils import sav_gol_filt as sg_filt
 from scipy import ndimage
 #import fcns
 
@@ -78,16 +78,15 @@ def get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth=-1, 
 
             #Cursor trajectory: 
             if animal == 'grom':
-                import psycho_metrics as pm
-                import spectral_metrics as sm
+                from utils import psycho_metrics as pm
+                from utils import spectral_metrics as sm
                 fname = load_files.load(b, day, return_name_only=True)
                 kw = dict(target_coding='standard', fnames = [fname], all_kins=True)
 
                 try:
                     
                     #kin_sig is signal2 in sm.get_sig and is [ xpos, ypos, xvel, yvel, speed] and is metric x trials x time
-                    proj_vel, kin_sig, targ_dir = sm.get_sig([day], [[b]], go_cue_times_lfp, [len(go_cue_times_lfp)], 
-                        signal_type=signal_type, mc_lab = labs, prep=True, anim = 'grom', **kw)
+                    proj_vel, kin_sig, targ_dir = sm.get_sig([day], [[b]], go_cue_times_lfp, [len(go_cue_times_lfp)], signal_type=signal_type, mc_lab = labs, prep=True, anim = 'grom', **kw)
                     kin_feats = pm.kin_feat = pm.get_kin_sig_shenoy(proj_vel) #Kin 
                     rt = kin_feats[:, 2] #1500 is Go cue
 
@@ -95,8 +94,9 @@ def get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth=-1, 
                     print 'No AD33 key in ', day, b
 
             elif animal == 'cart':
-                kin_sig = get_cart_kin(b, day, go_cue_times_lfp, bef, aft)
-                rt = np.zeros((kin_sig.shape[1]))
+                #Get movement onset times for CART: 
+
+                kin_sig, rt = get_cart_kin(b, day, go_cue_times_lfp, bef, aft)
 
             #Smooth signal: 
             if smooth > 0:  
@@ -165,6 +165,9 @@ def get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, binsize, smooth=-1, 
 def get_cart_kin(block, day, go_cue_times_lfp, bef, aft):
     ''' Must return kin_sig, rt where kin_sig is a 5 x nbins matrix'''
 
+    #from utils import sav_gol_filt as sg_filt
+    from utils import psycho_metrics as pm
+
     t = load_files.load(block, day, animal='cart', include_hdfstuff=True)
     hdf = t['hdf']
     ts_func = t['ts_func']
@@ -173,13 +176,10 @@ def get_cart_kin(block, day, go_cue_times_lfp, bef, aft):
     go_cue_times_lfp_hdf_ix = ts_func(go_cue_times_lfp, 'hdf')
 
     KIN_SIG = []
+    RT = []
 
     #Must resample data to be 1000 Hz
     for ig, go_ in enumerate(go_cue_times_lfp_hdf_ix):
-        #Figure out hdf ix for trial and corresponding time stamps: 
-        #lfp = go_cue_times_lfp[ig]
-        #hdf_start = ts_func(np.array([lfp - bef]), 'hdf')
-        #hdf_end = ts_func(np.array([lfp + aft]), 'hdf')
         hdf_ix = np.arange(go_ - 90, go_+60)
         lfp_ix = (1000*ts_func(hdf_ix, 'plx')).astype(int)
         lfp_ix = lfp_ix - lfp_ix[0]
@@ -192,13 +192,8 @@ def get_cart_kin(block, day, go_cue_times_lfp, bef, aft):
 
 
         #In cm
-        #cursor = hdf.root.task[int(go_-((bef+1)*60)):int(go_+((aft+1)*60.))]['cursor'][:,[0,2]]
         cursor2 = hdf.root.task[int(go_-((bef)*60)):int(go_+((aft)*60.))]['cursor'][:,[0,2]]
-        
-        # c_filt_long = scipy.signal.resample_poly(cursor, 1000, 60, axis=0)
-        # c_filt = c_filt_long[1000:-1000,:]
-        # c_filt_bins = np.arange(-1*bef,aft,1./1000.) #bins in ms
-
+       
         #In cm / sec
         vel = np.diff(cursor2,axis=0)/(1./60.)
         vel_init = np.zeros((2500, 2))
@@ -208,21 +203,34 @@ def get_cart_kin(block, day, go_cue_times_lfp, bef, aft):
             else:
                 vel_init[lfp_ix[i]:lfp_ix[i+1],:] = vel[i,:]
 
-        # vel = np.diff(cursor,axis=0)/(1./60.)
-        # vel = np.vstack(( vel[0, :], vel))
-        # filt_vel = sg_filt.savgol_filter(vel, 9, 5, axis=0)
-        # v_filt_long = scipy.signal.resample_poly(filt_vel, 1000, 60, axis=0)
-        # v_filt = v_filt_long[1000:-1000,:]
-        
-        spd = np.sqrt(vel_init[:,0]**2 + vel_init[:, 1]**2)
 
+        # filt_vel = sg_filt.savgol_filter(vel, 9, 5, axis=0)
+
+        #Get RT - old fashioned way: 
+        curs_b = np.arange(-1500, 1000, 1000./60.)
+        vel = np.diff(cursor2, axis=0)/(1000./60.)
+        filt_vel = sg_filt.savgol_filter(vel, 9, 5, axis=0)
+        vel_bins = curs_b[:-1] + .5*(curs_b[1]-curs_b[0])
+        mc_vect = np.array([1, 0])
+        mc_vect_mat = np.tile(mc_vect[np.newaxis, :], [filt_vel.shape[0], 1])
+        proj_vel = np.sum(np.multiply(mc_vect_mat, filt_vel), axis=1)
+        start_bin  = 89;
+
+        kin_feat = pm.get_kin_sig_shenoy(proj_vel[np.newaxis], bins=vel_bins, start_bin=start_bin, 
+            first_local_max_method=True, after_start_est=200, kin_est=700)
+
+        RT.append(kin_feat[0, 2])
+
+        #Get Speed:
+        spd = np.sqrt(vel_init[:,0]**2 + vel_init[:, 1]**2)
         sub_kin_sig = np.vstack((cursor_init.T, vel_init.T, spd[np.newaxis, :]))
 
         KIN_SIG.append(sub_kin_sig)
 
     kin_sig = np.dstack((KIN_SIG))
+    rt = np.hstack((RT))
     #Yield metric x trial x time
-    return np.swapaxes(kin_sig, 1, 2)
+    return np.swapaxes(kin_sig, 1, 2), rt
 
 class ssm_spd(state_space_models.StateSpaceEndptVel2D):
     def __init__(self):
@@ -488,7 +496,6 @@ def bin_(x, binsize, mode='cnts'):
             x_.append(_tmp)
         x_binned.append(x_)
     return np.vstack((x_binned)).T
-
 
 def get_full_blocks_cart(keep_dict, days, blocks, mc_indicator, mc_only=True, nf_only = False, kin_type='endpt', decoder=None):
     #Make sure same number of blocks / days etc.
@@ -2334,7 +2341,8 @@ def six_class_LDA(test=True, within_task_comparison=True, x_task_comparison=Fals
     else:
         raise Exception
 
-def six_class_LDA_by_day(day, test=True, within_task_comparison=True, x_task_comparison=False, all_cells = False, animal='grom'):
+def six_class_LDA_by_day(day, test=True, within_task_comparison=True, x_task_comparison=False, 
+    all_cells = False, animal='grom'):
     
     #6 class LDA: 
     keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = get_unbinned(test=test, all_cells=all_cells, animal=animal, days=[day])
@@ -2346,11 +2354,15 @@ def six_class_LDA_by_day(day, test=True, within_task_comparison=True, x_task_com
 
     #Smoosh together binary kin signals
     K_bin_master = {}
+    KC_bin_master = {}
     for i_d, day in enumerate(days):
         kbn = []
+        kbn_c = []
         for i_b, b in enumerate(blocks[i_d]):
             kbn.append(bin_kin_signal[b, day])
+            kbn_c.append(binned_kin_signal_dict[b, day])
         K_bin_master[day] = np.vstack((kbn))
+        KC_bin_master[day] = np.vstack((kbn_c))
 
     b = 100
     B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
