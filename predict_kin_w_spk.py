@@ -1217,7 +1217,10 @@ def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal
     cmap = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
 
     f, ax = plt.subplots(figsize=(5, 4))
+    adj_secs = 30
+
     for i_d, d in enumerate(days):
+
         ntrials, nbins, nunits = S_bin[d].shape
         Spk_Day = S_bin[d]*binsize
         Beta_Day = B_bin[d]
@@ -1230,10 +1233,9 @@ def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal
         Kin_Day = np.vstack((Kin_Day))
         Spd_Day = np.vstack((Spd_Day))
 
-
-        mcnemar_adj = np.zeros((2, 2))
-        mcnemar = np.zeros((2, 2)) # across (same, diff), within (same, diff)
-        n_units = 0
+        nunits = 0
+        nsigdiffadj = 0
+        nsigdiff = 0
 
         for iu, un in enumerate(Params[d]['sorted_un']):
             lfp_lab2 = Params[d]['day_lfp_labs']
@@ -1247,127 +1249,46 @@ def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal
             spk = {}
             spk['mc'] = []
             spk['beta'] = []
- 
+            spk['mc_ix'] = []
+            spk['bt_ix'] = []
+
             for t, trl in enumerate(range(ntrials)):
-                if t in ix:
+                if t in ix2:
                     mc_hold = np.nonzero(np.logical_and(Beta_Day[t,:] == 1, Kin_Day[t, :]==0))[0]
                     if len(mc_hold) > 0:
                         spk['mc'].append(Spk_Day[t, mc_hold, iu])
+                        spk['mc_ix'].append(mc_hold + (t*Kin_Day.shape[1]))
 
-                elif t in ix2:
+                elif t in ix:
                     beta_hold = np.nonzero(np.logical_and(Beta_Day[t,:] == 1, Kin_Day[t, :]==0))[0]
                     if len(beta_hold) > 0:
                         spk['beta'].append(Spk_Day[t, beta_hold, iu])
+                        spk['bt_ix'].append(beta_hold + (t*Kin_Day.shape[1]) - (ix2[-1]*Kin_Day.shape[1]))
+            
             mc = np.hstack((spk['mc']))
+            mc_ix = np.hstack((spk['mc_ix']))
+
             bt = np.hstack((spk['beta']))
+            bt_ix = np.hstack((spk['bt_ix']))
 
-            # Adjacency: 
-            n_adj = np.floor(np.min([len(bt), len(mc)])/3.).astype(int)
-            mc_end = mc[-n_adj:]
-            bt_st = bt[:n_adj]
-            uadj, padj= scipy.stats.mannwhitneyu(mc_end, bt_st)
-            if padj < 0.05:
-                adj_same_diff[1]+=1
-            else:
-                adj_same_diff[0]+=1
+            mc_cut = mc_ix[-1] - adj_secs*10
+            mc_ix2 = np.nonzero(mc_ix >= mc_cut)
+            bt_ix2 = np.nonzero(bt_ix - bt_ix[0] <= adj_secs*10)
 
-            # Bootstrapped: 
-            n_mc = len(mc)/n_adj
-            n_bt = len(bt)/n_adj
+            if np.logical_and(np.mean(mc)/.1 > 1, np.mean(bt)/.1 > 1):
+                u, p = scipy.stats.mannwhitneyu(mc, bt)
+                u2, p2 = scipy.stats.mannwhitneyu(mc[mc_ix2], bt[bt_ix2])
+                if p < 0.05:
+                    nsigdiff += 1
+                if p2 < 0.05:
+                    nsigdiffadj += 1
+                nunits += 1 
 
-            if np.logical_and(np.mean(mc)/.1 > 5., np.mean(bt)/.1 > .5):
-                #print 'sizes: ', mc.shape, bt.shape
-                n_units += 1
-
-                # Within: 
-                nsigwin = 0
-                nwin = 0
-                for nmc in range(n_mc):
-                    mc_i = mc[nmc*n_adj:(nmc+1)*n_adj]
-                    for nmci in range(nmc+1, n_mc):
-                        mc_ii = mc[nmci*n_adj:(nmci+1)*n_adj]
-                        uwi, pwi= scipy.stats.mannwhitneyu(mc_i, mc_ii)
-                        if pwi < 0.05:
-                            nsigwin += 1
-                        nwin += 1
-
-                mc_pent = mc[-2*n_adj:-1*n_adj]
-                mc_ult = mc[-1*n_adj:]
-                u, padj = scipy.stats.mannwhitneyu(mc_pent, mc_ult)
-                if padj < 0.05:
-                    nsigwinadj = 1
-                else:
-                    nsigwinadj = 0
-
-                for nbt in range(n_bt):
-                    bt_i = bt[nbt*n_adj:(nbt+1)*n_adj]
-                    for nbti in range(nbt+1, n_bt):
-                        bt_ii = bt[nbti*n_adj:(nbti+1)*n_adj]
-                        uwi, pwi= scipy.stats.mannwhitneyu(bt_i, bt_ii)
-                        if pwi < 0.05:
-                            nsigwin+=1
-                        nwin += 1     
-
-                mc_pent = bt[n_adj:2*n_adj]
-                mc_ult = bt[:n_adj]
-                u, padj = scipy.stats.mannwhitneyu(mc_pent, mc_ult)
-                if padj < 0.05:
-                    nsigwinadj += 1  
-
-                nsigwinadj /= 2.   
-                nsigwinadj -= .1
-                nsigwinadj = np.round(nsigwinadj)          
-
-                # X: 
-                nsigx = 0
-                nx = 0
-                for nbt in range(n_bt):
-                    bt_i = bt[nbt*n_adj:(nbt+1)*n_adj]
-                    for nmc in range(n_mc):
-                        mc_i = mc[nmc*n_adj:(nmc+1)*n_adj]
-                        uwi, pwi= scipy.stats.mannwhitneyu(bt_i, mc_i)
-                        if pwi < 0.05:
-                            nsigx += 1
-                        nx += 1
-
-                mc_ult = mc[-n_adj:]
-                bt_ult = bt[:n_adj]
-                u, padj = scipy.stats.mannwhitneyu(mc_ult, bt_ult)
-                if padj < 0.05:
-                    nsigxadj = 1
-                else:
-                    nsigxadj = 0
-
-                mcnemar_adj[nsigxadj, nsigwinadj] += 1
-
-
-                perc_win = nsigwin/float(nwin)
-                if perc_win > .5:
-                    perc_win = 1
-                else:
-                    perc_win = 0
-
-                perc_x = nsigx/float(nx)
-                if perc_x > .5:
-                    perc_x = 1
-                else:
-                    perc_x = 0
-
-                mcnemar[perc_x, perc_win] += 1
-
-        import statsmodels.sandbox.stats.runs as sssr
-        stats, pv = sssr.mcnemar(mcnemar)
-        print d, ', mcnemar: ', pv, stats
-        
-        stats, pv = sssr.mcnemar(mcnemar_adj)
-        print d, ', mcnemar adj: ', pv, stats
-
-        #ax.bar(i_d+.1, adj_same_diff[1]/float(np.sum(adj_same_diff)), .2, color=tuple(np.array(cmap[i_d])/255.))
-        ax.bar(i_d+.1, np.sum(mcnemar[1,:])/np.sum(mcnemar), .2, color=tuple(np.array(cmap[i_d])/255.))
-        ax.bar(i_d+.3, np.sum(mcnemar[:, 1])/np.sum(mcnemar),.2, color=tuple(np.array(cmap[i_d])/255.))
-        ax.bar(i_d+.5, np.sum(mcnemar_adj[1,:])/np.sum(mcnemar_adj), .2, color=tuple(np.array(cmap[i_d])/255.))
-        ax.bar(i_d+.7, np.sum(mcnemar_adj[:, 1])/np.sum(mcnemar_adj),.2, color=tuple(np.array(cmap[i_d])/255.))
-        ax.text(i_d+.5, .1+np.sum(mcnemar[1,:])/np.sum(mcnemar), 'n='+str(n_units), fontsize=16,horizontalalignment='center')
+        ax.bar(i_d+.1, nsigdiff/float(nunits), .4, color=tuple(np.array(cmap[i_d])/255.))
+        ax.bar(i_d+.5, nsigdiffadj/float(nunits), .4, color=tuple(np.array(cmap[i_d])/255.))
+        # ax.bar(i_d+.5, np.sum(mcnemar_adj[1,:])/np.sum(mcnemar_adj), .2, color=tuple(np.array(cmap[i_d])/255.))
+        # ax.bar(i_d+.7, np.sum(mcnemar_adj[:, 1])/np.sum(mcnemar_adj),.2, color=tuple(np.array(cmap[i_d])/255.))
+        ax.text(i_d+.5, .1+nsigdiff/float(nunits), 'n='+str(nunits), fontsize=16,horizontalalignment='center')
     ax.set_ylabel('Percent of Units')
     ax.set_xticks(np.arange(6)+0.5)
     ax.set_xticklabels(days, rotation='vertical')
