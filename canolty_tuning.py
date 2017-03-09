@@ -54,8 +54,8 @@ def get_all_day(day):
     cr = run_canolty(*args)
     return cr[day]
 
-def main(test=True, animal='grom'):
-    args = get_all(test, animal)
+def main(test=True, animal='grom', all_cells=True):
+    args = get_all(test, animal, all_cells)
     cr = run_canolty(*args)
     return cr
 
@@ -561,6 +561,8 @@ def beta_met_to_mapping(day, blocks, mc_indicator, lfp_lab, BC_bin, S_bin, Param
     return master_res
 
 def sort_stuff(met, spks, n_b, metric='slp', ang_mean_use=False):
+    met = met[np.abs(met) != np.inf]
+    spks = spks[np.abs(met) != np.inf, :]
     #Put metric into bins:
     bins = []
     for i in np.linspace(0, 100, n_b+1):
