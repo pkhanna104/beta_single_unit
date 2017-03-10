@@ -146,7 +146,7 @@ def plot_chief_results(cheif_res, animal):
         plt.savefig('canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2_GROM.eps', format='eps', dpi=300)
         pickle.dump(cheif_res, open('grom_cheif_res.pkl', 'wb'))        
 
-def stats_on_chief_results(cheif_res):
+def stats_on_chief_results(cheif_res, metric_assess='slope', metric_cat='slp'):
     # define the colormap
     #cmap = ['maroon', 'firebrick', 'orangered', 'darksalmon', 'powderblue', 'lightslategrey']
     cmap = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
@@ -156,7 +156,7 @@ def stats_on_chief_results(cheif_res):
         dslope_win = []
         dslope_x = []
 
-        for im, (metric, metric2) in enumerate(zip(['slp'], ['slope'])):
+        for im, (metric, metric2) in enumerate(zip([metric_cat], [metric_assess])):
             for ie, epoch in enumerate(['hold']):
                 for it in [0, 1]:
                     slp, intc, r_v2, p_v, ste = scipy.stats.linregress(cr[(it, metric, 0, epoch)][metric2], cr[(it, metric, 1, epoch)][metric2])
@@ -407,7 +407,6 @@ def beta_met_to_mapping(day, blocks, mc_indicator, lfp_lab, BC_bin, S_bin, Param
     ''' Method to downsample FR vs. continuous beta metrics
         Input: n_b = number of bins to downsample to 
     '''
-
     #Index metics: 
     amp = np.log10(BC_bin[day])
     phz = BC_bin[day, 'phz']
@@ -564,7 +563,7 @@ def beta_met_to_mapping(day, blocks, mc_indicator, lfp_lab, BC_bin, S_bin, Param
 
         for task, spks in enumerate([mc, b]):
             #for metric_ix, (mets, metric, ang_mean_use) in enumerate(zip([amp_bundle, phz_bundle], ['slp', 'pref_phz'], [False, True])):
-            for metric_ix, (mets, metric, ang_mean_use) in enumerate(zip([amp_bundle], ['slp'], [False])):    
+            for metric_ix, (mets, metric, ang_mean_use) in enumerate(zip([amp_bundle, amp_bundle], ['slp', 'mean'], [False, False])):    
                 met = mets[task]
                 spks = spk_bundle[task]
                 port = portion_bundle[task]
@@ -574,17 +573,17 @@ def beta_met_to_mapping(day, blocks, mc_indicator, lfp_lab, BC_bin, S_bin, Param
                         res, met_x, spk_x = sort_stuff(met[portion_ix], spks[portion_ix, :], n_b, metric=metric, ang_mean_use=ang_mean_use)
                         master_res[task, metric, p, epoch_name] = res
 
-                        if np.logical_and(p == 2, metric=='slp'):
-                            for jj in range(spk_x.shape[1]):
-                                try:
-                                    axi = ax[jj/5, jj%5]
-                                    axi.plot(met_x, 1000*spk_x[:, jj], color[epoch_name][task]+'.')
-                                    axi.plot(met_x, 1000*((np.array(met_x)*float(res['slope'][jj]))+ float(res['intcp'][jj])), color[epoch_name][task]+'-')
-                                    #pop, pcov = scipy.optimize.curve_fit(fcn, met_x, 1000*spk_x[:, jj])
-                                    #axi.plot(met_x, fcn2(met_x, *pop), color[task])
-                                    axi.set_title('sig'+Params[day]['sorted_un'][jj])
-                                except:
-                                    pass
+                        # if np.logical_and(p == 2, metric=='slp'):
+                        #     for jj in range(spk_x.shape[1]):
+                        #         try:
+                        #             #axi = ax[jj/5, jj%5]
+                        #             #axi.plot(met_x, 1000*spk_x[:, jj], color[epoch_name][task]+'.')
+                        #             #axi.plot(met_x, 1000*((np.array(met_x)*float(res['slope'][jj]))+ float(res['intcp'][jj])), color[epoch_name][task]+'-')
+                        #             #pop, pcov = scipy.optimize.curve_fit(fcn, met_x, 1000*spk_x[:, jj])
+                        #             #axi.plot(met_x, fcn2(met_x, *pop), color[task])
+                        #             #axi.set_title('sig'+Params[day]['sorted_un'][jj])
+                        #         except:
+                        #             pass
     plt.tight_layout()
     #plt.savefig('/Users/preeyakhanna/Dropbox/Carmena_Lab/Documentation/NeuronPaper/JNeuroDraft/canolty_amp_tuning_'+day+'.eps', format='eps', dpi=300)
     return master_res
@@ -629,6 +628,13 @@ def sort_stuff(met, spks, n_b, metric='slp', ang_mean_use=False):
             intcp.append(intc)
             pv.append(p_v)
         res = dict(slope=slope, stder=stder, intcp=intcp, p_v=pv)
+
+    elif metric == 'mean':
+        mn_z = []
+        for i in range(spk_x.shape[1]):
+            mn_z.append(np.mean(spk_x[:, i]))
+        res = dict(mean = mn_z)
+
     elif metric == 'pref_phz':
         pp = []
         for i in range(spk_x.shape[1]):
