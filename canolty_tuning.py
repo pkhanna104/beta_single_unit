@@ -87,7 +87,7 @@ def run_canolty(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, b
         chief_res[d] = master_res
     return chief_res
 
-def plot_chief_results(cheif_res):
+def plot_chief_results(cheif_res, animal):
     # define the colormap
     #cmap = ['maroon', 'firebrick', 'orangered', 'darksalmon', 'powderblue', 'lightslategrey']
     cmap = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
@@ -104,14 +104,14 @@ def plot_chief_results(cheif_res):
                         axi = ax[ie, it]
                         slp, intc, r_v2, p_v, ste = scipy.stats.linregress(cr[(it, metric, 0, epoch)][metric2], cr[(it, metric, 1, epoch)][metric2])
                         try:
-                            axi.plot(cr[(it, metric, 0, epoch)][metric2], cr[(it, metric, 1, epoch)][metric2], '.', markerfacecolor=tuple(np.array(cmap[i_d])/255.), label='$R^2=$'+str(int(1000*(r_v2**2))/1000.))
+                            axi.plot(cr[(it, metric, 0, epoch)][metric2], cr[(it, metric, 1, epoch)][metric2], '.', markerfacecolor=tuple(np.array(cmap[i_d])/255.), label='$r=$'+str(int(1000*(r_v2**1))/1000.))
                         except:
                             print 'skippping ', d
                 
                 if im == 0:
                     slp, intc, r_v1, p_v, ste = scipy.stats.linregress(cr[(0, metric, 2, epoch)][metric2], cr[(1, metric, 2, epoch)][metric2])
                     try:
-                        ax[ie, 2].plot(cr[(0, metric, 2, epoch)][metric2], cr[(1, metric, 2, epoch)][metric2], '.', markerfacecolor=tuple(np.array(cmap[i_d])/255.), label='$R^2=$'+str(int(1000*(r_v1**2))/1000.))
+                        ax[ie, 2].plot(cr[(0, metric, 2, epoch)][metric2], cr[(1, metric, 2, epoch)][metric2], '.', markerfacecolor=tuple(np.array(cmap[i_d])/255.), label='$r=$'+str(int(1000*(r_v1**1))/1000.))
                     except:
                         print 'skipping', d        
     for ie in [0, 1]:
@@ -137,8 +137,37 @@ def plot_chief_results(cheif_res):
 
         
     plt.tight_layout()
-    plt.savefig('canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2_all_cells_three_fourth_mc.eps', format='eps', dpi=300)
-    pickle.dump(cheif_res, open('all_cells_cheif_res_three_fourth_mc.pkl', 'wb'))
+
+    if animal == 'cart':
+        plt.savefig('canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2_all_cells_three_fourth_mc.eps', format='eps', dpi=300)
+        pickle.dump(cheif_res, open('all_cells_cheif_res_three_fourth_mc.pkl', 'wb'))
+
+    elif animal == 'grom':
+        plt.savefig('canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2_GROM.eps', format='eps', dpi=300)
+        pickle.dump(cheif_res, open('grom_cheif_res.pkl', 'wb'))        
+
+def stats_on_chief_results(cheif_res):
+    # define the colormap
+    #cmap = ['maroon', 'firebrick', 'orangered', 'darksalmon', 'powderblue', 'lightslategrey']
+    cmap = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
+
+    for i_d, d in enumerate(np.sort(cheif_res.keys())):
+        cr = cheif_res[d]
+        dslope_win = []
+        dslope_x = []
+
+        for im, (metric, metric2) in enumerate(zip(['slp'], ['slope'])):
+            for ie, epoch in enumerate(['hold']):
+                for it in [0, 1]:
+                    slp, intc, r_v2, p_v, ste = scipy.stats.linregress(cr[(it, metric, 0, epoch)][metric2], cr[(it, metric, 1, epoch)][metric2])
+                    dslope_win.append(np.abs(np.array(cr[(it, metric, 0, epoch)][metric2]) - np.array(cr[(it, metric, 1, epoch)][metric2])))
+
+                slp, intc, r_v1, p_v, ste = scipy.stats.linregress(cr[(0, metric, 2, epoch)][metric2], cr[(1, metric, 2, epoch)][metric2])
+                dslope_x.append(np.abs(np.array(cr[(0, metric, 0, epoch)][metric2]) - np.array(cr[(1, metric, 1, epoch)][metric2])))
+                dslope_x.append(np.abs(np.array(cr[(0, metric, 1, epoch)][metric2]) - np.array(cr[(1, metric, 0, epoch)][metric2])))
+
+        u, p = scipy.stats.mannwhitneyu(np.hstack((dslope_x)), np.hstack((dslope_win)))
+        print i_d, d, p, u, len(np.hstack((dslope_x)))/2.
 
 def old_stuff():
     # Plot Amp: 
