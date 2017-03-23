@@ -26,6 +26,9 @@ import math
 from collections import namedtuple
 import pickle
 
+import pandas as pd
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
 import seaborn
 seaborn.set(font='Arial',context='talk',font_scale=1.2,style='white')
 
@@ -39,7 +42,7 @@ def get_all(test, animal, all_cells):
 
     kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, go_times_dict, lfp_lab, 1, smooth = 50, animal=animal)
 
-    return keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator, B_bin, BC_bin, S_bin, Params, kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt
+    return keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator, B_bin, BC_bin, S_bin, Params, kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt, animal
 
 def get_all_day(day):
     # test = false, all_cells = False, 3/4 = true
@@ -74,7 +77,7 @@ def main_mp():
 
 def run_canolty(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, 
     bef, aft, go_times_dict, mc_indicator, B_bin, BC_bin, S_bin, Params, kin_signal_dict, 
-    binned_kin_signal_dict, bin_kin_signal, rt):
+    binned_kin_signal_dict, bin_kin_signal, rt, animal):
 
     n_b = 10
     color_dict = dict(b0='r', b1='g',b2='k')
@@ -83,14 +86,16 @@ def run_canolty(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, b
     chief_res = {}
 
     for i_d, d in enumerate(days):
-        master_res = beta_met_to_mapping(d, blocks[i_d], mc_indicator[i_d], lfp_lab, BC_bin, S_bin, Params, bin_kin_signal, n_b=n_b)
+        master_res = beta_met_to_mapping(d, blocks[i_d], mc_indicator[i_d], lfp_lab, BC_bin, S_bin, Params, bin_kin_signal, animal, n_b=n_b)
         chief_res[d] = master_res
     return chief_res
 
-def plot_chief_results(cheif_res, animal):
+def plot_chief_results(cheif_res, animal, save=False):
     # define the colormap
     #cmap = ['maroon', 'firebrick', 'orangered', 'darksalmon', 'powderblue', 'lightslategrey']
     cmap = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
+
+    r_dict = dict(co=[], nf=[], x=[])
 
     f, ax = plt.subplots(figsize=(15, 10),nrows=2, ncols=3)
 
@@ -98,11 +103,16 @@ def plot_chief_results(cheif_res, animal):
         cr = cheif_res[d]
         
         for im, (metric, metric2) in enumerate(zip(['slp', 'pref_phz'], ['slope', 'pref_phz'])):
-            for ie, epoch in enumerate(['hold', 'reach']):
+            for ie, epoch in enumerate(['hold']):#, 'reach']):
                 for it in [0, 1]:
                     if im == 0:
                         axi = ax[ie, it]
                         slp, intc, r_v2, p_v, ste = scipy.stats.linregress(cr[(it, metric, 0, epoch)][metric2], cr[(it, metric, 1, epoch)][metric2])
+                        if it == 0:
+                            r_dict['co'].append(r_v2)
+                        elif it == 1:
+                            r_dict['nf'].append(r_v2)
+
                         try:
                             axi.plot(cr[(it, metric, 0, epoch)][metric2], cr[(it, metric, 1, epoch)][metric2], '.', markerfacecolor=tuple(np.array(cmap[i_d])/255.), label='$r=$'+str(int(1000*(r_v2**1))/1000.))
                         except:
@@ -110,6 +120,7 @@ def plot_chief_results(cheif_res, animal):
                 
                 if im == 0:
                     slp, intc, r_v1, p_v, ste = scipy.stats.linregress(cr[(0, metric, 2, epoch)][metric2], cr[(1, metric, 2, epoch)][metric2])
+                    r_dict['x'].append(r_v1)
                     try:
                         ax[ie, 2].plot(cr[(0, metric, 2, epoch)][metric2], cr[(1, metric, 2, epoch)][metric2], '.', markerfacecolor=tuple(np.array(cmap[i_d])/255.), label='$r=$'+str(int(1000*(r_v1**1))/1000.))
                     except:
@@ -138,36 +149,99 @@ def plot_chief_results(cheif_res, animal):
         
     plt.tight_layout()
 
-    if animal == 'cart':
-        plt.savefig('canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2_all_cells_three_fourth_mc.eps', format='eps', dpi=300)
-        pickle.dump(cheif_res, open('all_cells_cheif_res_three_fourth_mc.pkl', 'wb'))
+    if save:
+        if animal == 'cart':
+            plt.savefig('canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2_all_cells_three_fourth_mc.eps', format='eps', dpi=300)
+            pickle.dump(cheif_res, open('all_cells_cheif_res_three_fourth_mc.pkl', 'wb'))
 
-    elif animal == 'grom':
-        plt.savefig('canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2_GROM.eps', format='eps', dpi=300)
-        pickle.dump(cheif_res, open('grom_cheif_res.pkl', 'wb'))        
-
-def stats_on_chief_results(cheif_res, metric_assess='slope', metric_cat='slp'):
+        elif animal == 'grom':
+            plt.savefig('canolty_mc_vs_nf_tuning_for_hold_row1_and_reach_row2_GROM.eps', format='eps', dpi=300)
+            pickle.dump(cheif_res, open('grom_cheif_res.pkl', 'wb'))        
+    return r_dict
+    
+def stats_on_chief_results(animal, metric_assess='slope', metric_cat='slp'):
     # define the colormap
     #cmap = ['maroon', 'firebrick', 'orangered', 'darksalmon', 'powderblue', 'lightslategrey']
-    cmap = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
+    c = pickle.load(open('grom_cheif_res.pkl'))
+    c2 = pickle.load(open('all_cells_cheif_res_three_fourth_mc.pkl'))
 
-    for i_d, d in enumerate(np.sort(cheif_res.keys())):
-        cr = cheif_res[d]
-        dslope_win = []
-        dslope_x = []
+    if animal == 'grom':
+        c_master = [c]
+    elif animal == 'cart':
+        c_master = [c2]
+    elif animal == 'both':
+        c_master = [c, c2]
 
-        for im, (metric, metric2) in enumerate(zip([metric_cat], [metric_assess])):
-            for ie, epoch in enumerate(['hold']):
-                for it in [0, 1]:
-                    slp, intc, r_v2, p_v, ste = scipy.stats.linregress(cr[(it, metric, 0, epoch)][metric2], cr[(it, metric, 1, epoch)][metric2])
-                    dslope_win.append(np.abs(np.array(cr[(it, metric, 0, epoch)][metric2]) - np.array(cr[(it, metric, 1, epoch)][metric2])))
+    D = dict(slope=[], task=[], subset=[], uid=[], day=[])
 
-                slp, intc, r_v1, p_v, ste = scipy.stats.linregress(cr[(0, metric, 2, epoch)][metric2], cr[(1, metric, 2, epoch)][metric2])
-                dslope_x.append(np.abs(np.array(cr[(0, metric, 0, epoch)][metric2]) - np.array(cr[(1, metric, 1, epoch)][metric2])))
-                dslope_x.append(np.abs(np.array(cr[(0, metric, 1, epoch)][metric2]) - np.array(cr[(1, metric, 0, epoch)][metric2])))
+    offs = 0
+    for ic, cheif_res in enumerate(c_master):
+        for i_d, d in enumerate(np.sort(cheif_res.keys())):
+            cr = cheif_res[d]
 
-        u, p = scipy.stats.mannwhitneyu(np.hstack((dslope_x)), np.hstack((dslope_win)))
-        print i_d, d, p, u, len(np.hstack((dslope_x)))/2.
+            metric = metric_cat
+            metric2 = metric_assess
+            epoch = 'hold'
+
+            # For each task
+            for it in [0, 1]:
+
+                # For each subset: 
+                for i_s in [0, 1]:
+                    slps = cr[(it, metric, i_s, epoch)][metric2]
+                    z = np.zeros_like(slps)
+
+                    D['slope'].append(cr[(it, metric, i_s, epoch)][metric2])
+                    D['task'].append(it+z)
+                    D['subset'].append(i_s+z)
+                    D['uid'].append(np.arange(offs, offs+len(z)))
+    
+                    if ic == 0:
+                        D['day'].append(z+i_d)
+                    elif ic == 1:
+                        D['day'].append(z+6+i_d)
+
+            offs+= len(z)
+    return D
+
+def stats_cont(D):
+    slps = np.hstack((D['slope']))
+    task = np.hstack((D['task']))
+    subset = np.hstack((D['subset']))
+    days = np.hstack((D['day']))
+    uid = np.hstack((D['uid']))
+
+    # Paired T-Test for CO-C0 test: 
+    coix0 = np.nonzero(np.logical_and(task==0, subset==0))[0]
+    coix1 = np.nonzero(np.logical_and(task==0, subset==1))[0]
+    cot, cop = scipy.stats.ttest_rel(slps[coix0], slps[coix1])
+
+    nfix0 = np.nonzero(np.logical_and(task==1, subset==0))[0]
+    nfix1 = np.nonzero(np.logical_and(task==1, subset==1))[0]
+    nnot, nnop = scipy.stats.ttest_rel(slps[nfix0], slps[nfix1])
+
+    nnot0, nnop0 = scipy.stats.ttest_rel(slps[coix0], slps[nfix0])
+    nnot1, nnop1 = scipy.stats.ttest_rel(slps[coix0], slps[nfix1])
+    nnot2, nnop2 = scipy.stats.ttest_rel(slps[coix1], slps[nfix0])
+    nnot3, nnop3 = scipy.stats.ttest_rel(slps[coix1], slps[nfix1])
+          
+    print 'co-co: ', cot, cop, len(coix0)
+    print 'nf-nf: ', nnot, nnop, len(nfix0)
+    print 'co0-nf0: ', nnot0, nnop0
+    print 'co0-nf1: ', nnot1, nnop1
+    print 'co1-nf0 ', nnot2, nnop2
+    print 'co1-nf1 ', nnot3, nnop3
+    
+    
+    
+    # N = len(uid)
+    # unit0 = namedtuple('unit0', ['uid', 'slp', 'task', 'day'])
+    # df = pt.DataFrame()
+    # for n in range(N):
+    #     df.insert(unit0(uid[n], slps[n], task[n], days[n])._asdict())
+
+    # aov = df.anova('slp', sub='uid', wfactors=['task'])
+    # print(aov)
 
 def old_stuff():
     # Plot Amp: 
@@ -403,7 +477,7 @@ def old_stuff():
     #         plt.tight_layout()
     return 10
 
-def beta_met_to_mapping(day, blocks, mc_indicator, lfp_lab, BC_bin, S_bin, Params, bin_kin_signal, n_b = 15,):
+def beta_met_to_mapping(day, blocks, mc_indicator, lfp_lab, BC_bin, S_bin, Params, bin_kin_signal, animal, n_b = 15,):
     ''' Method to downsample FR vs. continuous beta metrics
         Input: n_b = number of bins to downsample to 
     '''
@@ -542,16 +616,16 @@ def beta_met_to_mapping(day, blocks, mc_indicator, lfp_lab, BC_bin, S_bin, Param
         #phz_bundle = [pmc, pb]
 
         #Use 3/4 of the data instead 1/2 of data, for MC only. 
-
-        tmp1 = set(range(len(mc)))
-        tmp2 = set(range(0, len(mc), 4))
-        tmp3 = set(range(1, len(mc), 4))
-
-        ix1 = np.array(list(tmp1.difference(tmp2)))
-        ix2 = np.array(list(tmp1.difference(tmp3)))
-
-        #ix1 = np.arange(0, len(mc), 2)
-        #ix2 = np.arange(1, len(mc), 2)
+        if animal == 'cart':
+            tmp1 = set(range(len(mc)))
+            tmp2 = set(range(0, len(mc), 4))
+            tmp3 = set(range(1, len(mc), 4))
+            ix1 = np.array(list(tmp1.difference(tmp2)))
+            ix2 = np.array(list(tmp1.difference(tmp3)))
+        
+        elif animal == 'grom':
+            ix1 = np.arange(0, len(mc), 2)
+            ix2 = np.arange(1, len(mc), 2)
 
         ix1b = np.arange(0, len(b), 2)
         ix2b = np.arange(1, len(b), 2)
