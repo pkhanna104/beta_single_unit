@@ -7,6 +7,8 @@ import matplotlib.pyplot as plt
 import state_space_w_beta_bursts as ssbb
 import pickle
 import scipy.stats
+import seaborn
+seaborn.set(font='Arial',context='talk',font_scale=1.2,style='white')
 
 cmap1 = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
 cmap2  = ['lightseagreen','dodgerblue','gold','orangered','k']
@@ -567,8 +569,11 @@ def plot_chance_all(dat):
     ax.errorbar(2+.3, np.mean(nf_perf), yerr=np.std(nf_perf)/np.sqrt(len(nf_perf)), color='k')
     ax.errorbar(3+.3, np.mean(nf_ch),  yerr=np.std(nf_ch)/np.sqrt(len(nf_ch)), color='k')
 
-def plot_perc_all(dat, offs=0):
-    f, ax = plt.subplots()
+def plot_perc_all():
+    d2 = pickle.load(open('grom_25_lag_3_master_logistic_regression_zsc_traintest_dict.pkl'))
+    d  = pickle.load(open('cart_25_lag_3_master_logistic_regression_zsc_traintest_dict.pkl'))
+    offs = [0, .315]
+    subj = ['grom', 'cart']
 
     co_0 = []
     co_1 = []
@@ -576,61 +581,85 @@ def plot_perc_all(dat, offs=0):
     nf_0 = []
     nf_1 = []
 
-    days = dat.keys()
-    for i_d, dy in enumerate(np.sort(days)):
-        d = dat[dy][0]
-        co_ = d['co_label']
+    for i, dat in enumerate([d2, d]):
+        days = dat.keys()
 
-        ix0 = np.nonzero(co_==0)[0]
-        ix1 = np.nonzero(co_ ==1)[0]
+        co_0day = []
+        co_1day = []
+        nf_0day = []
+        nf_1day = []
 
-        co_0.append(d['score_co'][ix0])
-        co_1.append(d['score_co'][ix1])
+        for i_d, dy in enumerate(np.sort(days)):
+            d = dat[dy][0]
+            co_ = d['co_label']
 
-        nf_ = d['nf_label']
-        ix0 = np.nonzero(nf_==0)[0]
-        ix1 = np.nonzero(nf_==1)[0]
+            ix0 = np.nonzero(co_==0)[0]
+            ix1 = np.nonzero(co_ ==1)[0]
 
-        nf_0.append(d['score_nf'][ix0])
-        nf_1.append(d['score_nf'][ix1])
+            co_0.append(d['score_co'][ix0])
+            co_1.append(d['score_co'][ix1])
+            co_0day.append(d['score_co'][ix0])
+            co_1day.append(d['score_co'][ix1])
 
+            nf_ = d['nf_label']
+            ix0 = np.nonzero(nf_==0)[0]
+            ix1 = np.nonzero(nf_==1)[0]
 
-        fpr = dict()
-        tpr = dict()
-        roc_auc = dict()
+            nf_0.append(d['score_nf'][ix0])
+            nf_1.append(d['score_nf'][ix1])
+            nf_0day.append(d['score_nf'][ix0])
+            nf_1day.append(d['score_nf'][ix1])
+
+            # fpr = dict()
+            # tpr = dict()
+            # roc_auc = dict()
+            
+            # fpr, tpr, _ = sklearn.metrics.roc_curve(d['co_label'], d['score_co']) 
+            # roc_auc =  sklearn.metrics.auc(fpr, tpr)
+            # #print 'co auc: ', roc_auc
+
+            # fpr, tpr, _ = sklearn.metrics.roc_curve(d['nf_label'], d['score_nf']) 
+            # roc_auc =  sklearn.metrics.auc(fpr, tpr)
+            # #print 'nf auc: ', roc_auc
+        f, ax = plt.subplots()
+
+        co0 = np.hstack((co_0day))
+        co1 = np.hstack((co_1day))
+        nf0 = np.hstack((nf_0day))
+        nf1 = np.hstack((nf_1day))
+
+        ax.bar(0, np.mean(co0)-offs[i], color='blue', width = .6)
+        ax.bar(1, np.mean(co1)-offs[i], color='blue', width = .6)
+        ax.bar(2, np.mean(nf0)-offs[i], color='red', width = .6)
+        ax.bar(3, np.mean(nf1)-offs[i], color='red', width = .6)
         
-        fpr, tpr, _ = sklearn.metrics.roc_curve(d['co_label'], d['score_co']) 
-        roc_auc =  sklearn.metrics.auc(fpr, tpr)
-        #print 'co auc: ', roc_auc
+        ax.errorbar(0+.3, np.mean(co0)-offs[i], yerr=np.std(co0)/np.sqrt(len(co0)), color='k')
+        ax.errorbar(1+.3, np.mean(co1)-offs[i], yerr=np.std(co1)/np.sqrt(len(co1)), color='k')
+        ax.errorbar(2+.3, np.mean(nf0)-offs[i], yerr=np.std(nf0)/np.sqrt(len(nf0)), color='k')
+        ax.errorbar(3+.3, np.mean(nf1)-offs[i],  yerr=np.std(nf1)/np.sqrt(len(nf1)), color='k')
 
-        fpr, tpr, _ = sklearn.metrics.roc_curve(d['nf_label'], d['score_nf']) 
-        roc_auc =  sklearn.metrics.auc(fpr, tpr)
-        #print 'nf auc: ', roc_auc
+        plt.savefig('/home/lab/code/beta_single_unit/c_data/'+subj[i]+'_fig7bar.eps', format='eps', dpi=300)
 
+        co00 = np.array([np.mean(co) for co in co_0day])
+        co11 = np.array([np.mean(co) for co in co_1day])
+        nf00 = np.array([np.mean(co) for co in nf_0day])
+        nf11 = np.array([np.mean(co) for co in nf_1day])
+        print ''
+        print ''
+        print ' SUBJ: ', subj[i]
+        print 'CO ttest:', scipy.stats.ttest_rel(co00, co11) , 'n = ', len(co00), len(co11)
+        print 'NF ttest:', scipy.stats.ttest_rel(nf00, nf11) , 'n= ', len(nf00), len(nf11)
+
+    
     co00 = np.array([np.mean(co) for co in co_0])
     co11 = np.array([np.mean(co) for co in co_1])
     nf00 = np.array([np.mean(co) for co in nf_0])
     nf11 = np.array([np.mean(co) for co in nf_1])
-
+    print ''
+    print ''
+    print ' ALL: '
     print 'CO ttest:', scipy.stats.ttest_rel(co00, co11) , 'n = ', len(co00), len(co11)
     print 'NF ttest:', scipy.stats.ttest_rel(nf00, nf11) , 'n= ', len(nf00), len(nf11)
-
-    co0 = np.hstack((co_0))
-    co1 = np.hstack((co_1))
-    nf0 = np.hstack((nf_0))
-    nf1 = np.hstack((nf_1))
-
-
-
-    ax.bar(0, np.mean(co0)-offs, color='blue', width = .6)
-    ax.bar(1, np.mean(co1)-offs, color='blue', width = .6)
-    ax.bar(2, np.mean(nf0)-offs, color='red', width = .6)
-    ax.bar(3, np.mean(nf1)-offs, color='red', width = .6)
-    
-    ax.errorbar(0+.3, np.mean(co0)-offs, yerr=np.std(co0)/np.sqrt(len(co0)), color='k')
-    ax.errorbar(1+.3, np.mean(co1)-offs, yerr=np.std(co1)/np.sqrt(len(co1)), color='k')
-    ax.errorbar(2+.3, np.mean(nf0)-offs, yerr=np.std(nf0)/np.sqrt(len(nf0)), color='k')
-    ax.errorbar(3+.3, np.mean(nf1)-offs,  yerr=np.std(nf1)/np.sqrt(len(nf1)), color='k')
 
 def plot_pretty_traj(dat, day, binsize):
     
@@ -766,63 +795,77 @@ def bar_plots(axi, d, cmap2, tsk='nf', sort_by_targ=False):
         axi.bar(L, beta_tg[L]/float(beta_cnt[L]))
     return axi
 
-def line_plots_all(dat, offs=0.0):
-    days = dat.keys()
-    f, axi = plt.subplots()
+def line_plots_all():
+    d2 = pickle.load(open('grom_25_lag_3_master_logistic_regression_zsc_traintest_dict.pkl'))
+    d  = pickle.load(open('cart_25_lag_3_master_logistic_regression_zsc_traintest_dict.pkl'))
+    tskd = dict(co={}, nf={})
+    tskd['co'][0] = []
+    tskd['co'][1] = []
+    tskd['nf'][0] = []
+    tskd['nf'][1] = []
+
+    for i, (dat, offs) in enumerate(zip([d2, d], [0, .315])):
+        days = dat.keys()
+        f, axi = plt.subplots()
+
+        for it, tsk in enumerate(['co', 'nf']):
+            tskd[0] = []
+            tskd[1] = []
+
+            for i_d, dy in enumerate(np.sort(days)):
+                d = dat[dy][0]
+
+                if tsk == 'co':
+                    key = tsk+'_tm_trl_key_all'
+                    key1 = tsk+'_t2rt_all'
+                    key2 = 'score_'+tsk+'_all'
+                    key3 = tsk+'_binary_beta_all'
+                else:
+                    key = tsk+'_tm_trl_key'
+                    key1 = tsk+'_t2rt'
+                    key2 = 'score_'+tsk
+                    key3 = tsk+'_binary_beta'
+
+                tsk_trls = np.max(d[key][:, 1])
+                tsk_t2rt = -1*np.array(d[key1])
+                tsk_score = np.array(d[key2])
+
+                beta_tg = dict()
+                beta_tg[0] = []
+                beta_tg[1] = []
+                beta_cnt = np.zeros((2, ))
+                label = d[key3]
+
+                for i, L in enumerate(label):
+                    #Only take the portion from before the onset:
+                    if tsk_t2rt[i] < 0:
+                        beta_tg[L].append(tsk_score[i])
+
+                B0 = beta_tg[0]
+                B1 = beta_tg[1]
+
+                axi.plot(np.array([0, 1])+(2*it), [np.mean(B0)-offs, np.mean(B1)-offs], '.-',
+                    color=np.array(cmap1[i_d])/255.)
+
+
+                axi.errorbar(np.array([0, 1])+(2*it), [np.mean(B0)-offs, np.mean(B1)-offs], 
+                    yerr=np.array([np.std(B0)/np.sqrt(len(B0)), np.std(B1)/np.sqrt(len(B1))]),
+                    color=np.array(cmap1[i_d])/255.)
+
+                tskd[tsk][0].append(np.mean(B0))
+                tskd[tsk][1].append(np.mean(B1))
+                tskd[0].append(np.mean(B0))
+                tskd[1].append(np.mean(B1))
+
+            print 'TASK: ', tsk
+            print tsk+ ' ttest:', scipy.stats.ttest_rel(tskd[0], tskd[1]) , 'n = ', len(tskd[0]), len(tskd[1])
+
+        axi.set_xlabel('CO, NF')
+        axi.set_ylabel('Distance from Thresh')
+
     for it, tsk in enumerate(['co', 'nf']):
-        tskd = dict()
-        tskd[0] = []
-        tskd[1] = []
-
-        for i_d, dy in enumerate(np.sort(days)):
-            d = dat[dy][0]
-
-            if tsk == 'co':
-                key = tsk+'_tm_trl_key_all'
-                key1 = tsk+'_t2rt_all'
-                key2 = 'score_'+tsk+'_all'
-                key3 = tsk+'_binary_beta_all'
-            else:
-                key = tsk+'_tm_trl_key'
-                key1 = tsk+'_t2rt'
-                key2 = 'score_'+tsk
-                key3 = tsk+'_binary_beta'
-
-            tsk_trls = np.max(d[key][:, 1])
-            tsk_t2rt = -1*np.array(d[key1])
-            tsk_score = np.array(d[key2])
-
-            beta_tg = dict()
-            beta_tg[0] = []
-            beta_tg[1] = []
-            beta_cnt = np.zeros((2, ))
-            label = d[key3]
-
-            for i, L in enumerate(label):
-                #Only take the portion from before the onset:
-                if tsk_t2rt[i] < 0:
-                    beta_tg[L].append(tsk_score[i])
-
-
-            B0 = beta_tg[0]
-            B1 = beta_tg[1]
-
-            axi.plot(np.array([0, 1])+(2*it), [np.mean(B0)-offs, np.mean(B1)-offs], '.-',
-                color=np.array(cmap1[i_d])/255.)
-
-
-            axi.errorbar(np.array([0, 1])+(2*it), [np.mean(B0)-offs, np.mean(B1)-offs], 
-                yerr=np.array([np.std(B0)/np.sqrt(len(B0)), np.std(B1)/np.sqrt(len(B1))]),
-                color=np.array(cmap1[i_d])/255.)
-
-            tskd[0].append(np.mean(B0))
-            tskd[1].append(np.mean(B1))
-
-        print tsk+ ' ttest:', scipy.stats.ttest_rel(tskd[0], tskd[1]) , 'n = ', len(tskd[0]), len(tskd[1])
-
-
-    axi.set_xlabel('CO, NF')
-    axi.set_ylabel('Distance from Thresh')
+        print 'TASK: ', tsk
+        print tsk+ ' ttest:', scipy.stats.ttest_rel(tskd[tsk][0], tskd[tsk][1]) , 'n = ', len(tskd[tsk][0]), len(tskd[tsk][1])
             
 def traj_plot(axi, d, cmap2):
     co_trls = np.unique(d['co_tm_trl_key'][:, 1])
@@ -1545,6 +1588,204 @@ def plot_analyzed_ind_log_R_chosen_vs_unchosen(units, dat, days, animal='grom'):
     CH = np.hstack((osc_ch))
     print 'mann whitney on '
     print scipy.stats.mannwhitneyu(UC, CH)
+
+def big_plt_analyzed_chosen_pos_neg_vs_unchosen(beta_range = [20, 45]):
+    d = pickle.load(open('cart_25_lag_3_master_logistic_regression_zsc_traintest_dict.pkl'))
+    d2 = pickle.load(open('grom_25_lag_3_master_logistic_regression_zsc_traintest_dict.pkl'))
+
+    D = [d2, d]
+    subj = ['grom', 'cart']
+
+    f, ax = plt.subplots(nrows=2, ncols=5)
+    master_mets = {}
+    for s in ['grom','cart']:
+        master_mets[s] = {}
+        for i in ['wt', 'slp_co','slp_nf', 'mod_co', 'mod_nf', 'mn', 'ac']:
+            for j in range(2):
+                try:
+                    master_mets[s][j, i]['chosen'] = []
+                    master_mets[s][j, i]['unchosen'] = []
+                except:
+                    master_mets[s][j, i] = {}
+                    master_mets[s][j, i]['chosen'] = []
+                    master_mets[s][j, i]['unchosen'] = []
+
+    for i, (dat, animal) in enumerate(zip(D, subj)):
+        units, days, dat = analyze_ind_log_R(dat)
+
+        if animal == 'grom':
+            ac = pickle.load(open('grom_master_auto_correlations_pls_off.pkl'))
+            canolty = pickle.load(open('grom_cheif_res.pkl'))
+        
+        elif animal == 'cart':
+            ac = pickle.load(open('cart_master_auto_correlations_pls_off.pkl'))
+            canolty = pickle.load(open('all_cells_cheif_res_three_fourth_mc.pkl'))
+
+        for i_d, day in enumerate(days):
+
+            chosen0 = np.array(units[day, 'chosen'])
+            unchosen0 = np.array(units[day, 'nonchosen'])            
+
+            wts = np.array([ np.mean(units[day, 'wts'][n][0]) for n in range(len(chosen0)) ])
+            unchosen_neg = chosen0[np.nonzero(wts<0)[0]]
+            chosen_pos = chosen0[np.nonzero(wts>0)[0]]
+
+            for c, (chosen, unchosen) in enumerate(zip([chosen0, chosen_pos], [unchosen0, unchosen_neg])):
+
+                wts = np.array([ np.mean(units[day, 'wts'][n][0]) for n in range(len(chosen)) ])
+                if c == 0:    
+                    wts_bad =np.array([ np.mean(units[day, 'wts_bad'][n][0]) for n in range(len(unchosen)) ])
+                
+                elif c == 1:
+                    wts_bad = wts[wts<0]
+                    chi = np.nonzero(wts>0)[0]
+                    uchi= np.nonzero(wts <0)[0]
+                    wts = wts[wts >= 0]
+
+                master_mets[animal][c, 'wt']['chosen'].append(wts)
+                master_mets[animal][c, 'wt']['unchosen'].append(wts_bad)
+            
+                # Mean / std: 
+                mn = np.vstack((units[day, 'mean_std']))[chosen][:, 0]
+                mn2 = np.vstack((units[day, 'mean_std']))[unchosen][:, 0]
+                master_mets[animal][c, 'mn']['chosen'].append(mn)
+                master_mets[animal][c, 'mn']['unchosen'].append(mn2)            
+
+                # Mod Idx: Max - Min      
+                comodix = units[day, 'mod_idx']['chosen'][:, 0,  1] - units[day, 'mod_idx']['chosen'][:, 0, 0]
+                nfmodix = units[day, 'mod_idx']['chosen'][:, 1, 1] - units[day,'mod_idx']['chosen'][:, 1, 0]
+                if c == 0:
+                    master_mets[animal][c, 'mod_co']['chosen'].append(comodix)
+                    comodix_unch = units[day, 'mod_idx']['unchosen'][:, 0, 1] - units[day, 'mod_idx']['unchosen'][:, 0, 0]
+                    master_mets[animal][c, 'mod_co']['unchosen'].append(comodix_unch)
+                    
+                    master_mets[animal][c, 'mod_nf']['chosen'].append(nfmodix)    
+                    nfmodix_unch = units[day, 'mod_idx']['unchosen'][:, 1, 1] - units[day,'mod_idx']['unchosen'][:, 1, 0]
+                    master_mets[animal][c, 'mod_nf']['unchosen'].append(nfmodix_unch)
+                
+                elif c == 1:
+                    master_mets[animal][c, 'mod_co']['chosen'].append(comodix[chi])
+                    master_mets[animal][c, 'mod_co']['unchosen'].append(comodix[uchi])
+                    master_mets[animal][c, 'mod_nf']['chosen'].append(nfmodix[chi])    
+                    master_mets[animal][c, 'mod_nf']['unchosen'].append(nfmodix[uchi])
+
+                ############################
+                ##### AUTO CORR HIST #######
+                ############################
+
+                a = ac[day, 'cnts']
+                a[a==0] = 1
+                A = ac[day]/a
+
+                a_off = ac[day, 'cnts_off']
+                a_off[a_off==0] = 1
+                A_off = ac[day, 'off']/a_off
+
+                frange = np.nonzero(np.logical_and(f > beta_range[0], f < beta_range[1]))[0]
+
+                A[:, 200] = 0
+                A_off[:, 200] = 0
+
+                A[chosen, :]/=mn[:, None]
+                A[unchosen, :]/=mn2[:, None]
+
+                f, AF = fft_simple(A)
+                f, AF_off = fft_simple(A_off)
+                
+                A_chosen = AF[chosen, :] - AF_off[chosen, :]
+                A_unchosen = AF[unchosen, :] - AF_off[unchosen, :]
+
+                ach =np.log(A_chosen[:, 2:]/np.sum(A_chosen, axis=1)[:, None])
+                auc =np.log(A_unchosen[:, 2:]/np.sum(A_unchosen, axis=1)[:, None])
+
+                osc_ch =np.nanmean(ach[:, frange], axis=1)
+                osc_uch = np.nanmean(auc[:, frange], axis=1)
+
+                master_mets[animal][c, 'ac']['chosen'].append(osc_ch)
+                master_mets[animal][c, 'ac']['unchosen'].append(osc_uch)
+
+                ######################
+                ##### Canolty Slps  ##
+                ######################
+                can = canolty[day]
+                canolty_ch_co = []
+                canolty_ch_nf = []
+
+                canolty_unch_co = []
+                canolty_unch_nf = []
+
+                # All: 
+                for i, ic in enumerate(chosen):
+                    canolty_ch_co.append(can[0, 'slp', 2, 'hold']['slope'][ic])
+                    canolty_ch_nf.append(can[1, 'slp', 2, 'hold']['slope'][ic])
+
+                for i, ic in enumerate(unchosen):
+                    canolty_unch_co.append(can[0, 'slp', 2, 'hold']['slope'][ic])
+                    canolty_unch_nf.append(can[0, 'slp', 2, 'hold']['slope'][ic])
+
+                master_mets[animal][c, 'slp_co']['chosen'].append(canolty_ch_co)
+                master_mets[animal][c, 'slp_co']['unchosen'].append(canolty_unch_co)
+                master_mets[animal][c, 'slp_nf']['chosen'].append(canolty_ch_nf)
+                master_mets[animal][c, 'slp_nf']['unchosen'].append(canolty_unch_nf)
+    return master_mets
+
+def plot_big_plt(master_mets):
+    f, ax = plt.subplots(ncols= 5, nrows=2)
+    Names = ['Log. Reg. Wts', 'Beta-to-FR Slope', 'CO and NF Task Mod.', 'Mean FR', 'Beta Rhymicity']
+    Ylims = [[-0.1, .16], [-.0025, 0.0005], [.004, .012], [0, 16], [-5.5, -5]]
+    N = [2, 3, 2, 1, 2]
+    for i_s, subj in enumerate(['grom', 'cart']):
+        mm = master_mets[subj]
+    
+        for ch in range(2):
+
+            for im, met in enumerate(['wt', 'slp', 'mod', 'mn', 'ac']):
+
+                axi = ax[ch, im]
+
+                if met in ['slp', 'mod']:
+
+                    axi.bar(i_s, np.mean(np.hstack((mm[ch, met+'_co']['chosen']))), .3, color='k')
+                    axi.bar(i_s+.3, np.mean(np.hstack((mm[ch, met+'_co']['unchosen']))), .3,color='grey')
+                    #axi.bar(i_s+.4, np.mean(np.hstack((mm[ch, met+'_nf']['chosen']))), .2, color='k', edgecolor='white', hatch="o")
+                    #axi.bar(i_s+.6, np.mean(np.hstack((mm[ch, met+'_nf']['unchosen']))), .2, color='grey',edgecolor='white', hatch="o")
+                    
+                    x = np.hstack((mm[ch, met+'_co']['chosen']))
+                    axi.errorbar(i_s+.15, np.mean(x), 
+                        yerr= np.std(x)/np.sqrt(len(x)),color='k')
+                    
+                    x = np.hstack((mm[ch, met+'_co']['unchosen']))
+                    axi.errorbar(i_s+.45, np.mean(x), 
+                        yerr= np.std(x)/np.sqrt(len(x)),color='grey')
+                    
+                    # x = np.hstack((mm[ch, met+'_nf']['chosen']))
+                    # axi.errorbar(i_s+.5, np.mean(x),
+                    #     yerr= np.std(x)/np.sqrt(len(x)), color='k')
+                    
+                    # x = np.hstack((mm[ch, met+'_nf']['unchosen']))
+                    # axi.errorbar(i_s+.7, np.mean(x),
+                    #     yerr= np.std(x)/np.sqrt(len(x)), color='grey')
+                    
+                else:
+                    if met == 'mn':
+                        fact = 40*40
+                    else:
+                        fact = 1
+                    x = fact*np.hstack((mm[ch, met]['chosen']))
+                    axi.bar(i_s, np.nanmean(x), .3, color='k')
+                    axi.errorbar(i_s+.15, np.nanmean(x),
+                        yerr=np.nanstd(x)/np.sqrt(len(x)), color='k')
+
+                    x = fact*np.hstack((mm[ch, met]['unchosen']))
+                    axi.bar(i_s+.4, np.nanmean(x), .3, color='grey')
+                    axi.errorbar(i_s+.55, np.nanmean(x),
+                        yerr = np.nanstd(x)/np.sqrt(len(x)), color='grey')
+
+                axi.set_title(Names[im])
+                axi.set_ylim(Ylims[im])
+                axi.set_yticks(np.linspace(Ylims[im][0], Ylims[im][1], 4).round(N[im]))
+                axi.set_xticks([])
+                axi.set_xlim([-.4, 2.])
 
 def fft_simple(X):
     # Input X is units x timepoints
