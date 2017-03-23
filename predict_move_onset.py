@@ -1630,9 +1630,9 @@ def big_plt_analyzed_chosen_pos_neg_vs_unchosen(beta_range = [20, 45]):
             unchosen_neg = chosen0[np.nonzero(wts_0<0)[0]]
             chosen_pos = chosen0[np.nonzero(wts_0>0)[0]]
 
-            for c, (chosen, unchosen) in enumerate(zip([chosen0, chosen_pos], [unchosen0, unchosen_neg])):
+            wts_master = np.array([ np.mean(units[day, 'wts'][n][0]) for n in range(len(chosen0)) ])
 
-                wts_master = np.array([ np.mean(units[day, 'wts'][n][0]) for n in range(len(chosen)) ])
+            for c, (chosen, unchosen) in enumerate(zip([chosen0, chosen_pos], [unchosen0, unchosen_neg])):
                 
                 if c == 0:   
                     wts = wts_master.copy() 
@@ -1790,7 +1790,7 @@ def plot_big_plt(master_mets):
                         yerr = np.nanstd(x)/np.sqrt(len(x)), color='grey')
 
                 u, p = scipy.stats.kruskal(x, x0)
-                print subj, ', 0) ch-unch, 1) chpos-chneg: ', ch, ', metric: ', met, ', KW: ', u, p, len(x), len(x0)
+                print subj, ', 0) ch-unch, 1) chpos-chneg: ', ch, ', metric: ', met, ', KW: ', u, p, len(x0), len(x)
 
                 axi.set_ylabel(Ylabs[im])
                 axi.set_ylim(Ylims[im])
