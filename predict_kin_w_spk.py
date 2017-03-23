@@ -1296,6 +1296,152 @@ def beta_psth(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal
     plt.tight_layout()
     plt.savefig('/Users/preeyakhanna/Dropbox/Carmena_Lab/Documentation/NeuronPaper/JNeuroDraft/g_perc_sig_diff_FR_beta_vs_NF_hold_beta_events_on_to_targ64_100ms_bins_mcnewar.eps', format='eps', dpi=300)
 
+def beta_psth_v2(test, binsize, blocks, days, rt_dict, S_bin, B_bin, bin_kin_signal, Params, animal='grom'):
+    if animal == 'grom':
+        test = False
+        keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, animal='grom', all_cells=False)
+        binsize = 100
+        import state_space_w_beta_bursts as ssbb
+        B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
+            beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=binsize, animal='grom')
+        kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, 
+            go_times_dict, lfp_lab, binsize, smooth = 50, animal='grom')
+
+    elif animal == 'cart':
+        test = False
+        keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, rt_dict, beta_dict, beta_cont_dict, bef, aft, go_times_dict, mc_indicator = predict_kin_w_spk.get_unbinned(test=test, animal='cart', all_cells=True)
+        binsize = 100
+        import state_space_w_beta_bursts as ssbb
+        B_bin, BC_bin, S_bin, Params =  ssbb.bin_spks_and_beta(keep_dict, spk_dict, lfp_dict, lfp_lab, blocks, days, beta_dict, 
+            beta_cont_dict, bef, aft, smooth=-1, beta_amp_smooth=50, binsize=binsize, animal='cart')
+        
+        kin_signal_dict, binned_kin_signal_dict, bin_kin_signal, rt = predict_kin_w_spk.get_kin(days, blocks, bef, aft, 
+            go_times_dict, lfp_lab, binsize, smooth = 50, animal='cart')
+
+    cmap = [[178, 24, 43], [239, 138, 98], [253, 219, 199], [209, 229, 240], [103, 169, 207], [33, 102, 172]]
+
+    adj_secs = 30
+
+    for i_d, d in enumerate(days):
+        ntrials, nbins, nunits = S_bin[d].shape
+        Spk_Day = S_bin[d]*binsize
+        Beta_Day = B_bin[d]
+        Kin_Day = []
+        Spd_Day = []
+        for i_b, blk in enumerate(blocks[i_d]):
+            Kin_Day.append(bin_kin_signal[blk, d])
+            spd = binned_kin_signal_dict[blk, d]
+            Spd_Day.append(np.sqrt(spd[:, 2, :]**2 +spd[:,3,:]**2 ))
+        Kin_Day = np.vstack((Kin_Day))
+        Spd_Day = np.vstack((Spd_Day))
+
+        nunits = 0
+        distributions_mc = dict(pos=[], neg=[])
+        distributions_bt = dict(pos=[], neg=[])
+        #mcnewar = np.zeros((2, 2)) # win x across, same x diff
+        #mcnewar_ttest = np.zeros((2, 2))
+
+
+        for iu, un in enumerate(Params[d]['sorted_un']):
+            lfp_lab2 = Params[d]['day_lfp_labs']
+
+            # NF:
+            ix = np.nonzero(np.logical_and(lfp_lab2 > 80, lfp_lab2<=87))[0]
+
+            # CO: 
+            ix2 = np.nonzero(np.logical_or(lfp_lab2==88, lfp_lab2<80))[0] #RT PSTH changed all 64s to 88s. Oops
+
+            spk = {}
+            spk['mc'] = []
+            spk['beta'] = []
+            spk['mc_ix'] = []
+            spk['bt_ix'] = []
+
+            for t, trl in enumerate(range(ntrials)):
+                if t in ix2:
+                    mc_hold = np.nonzero(np.logical_and(Beta_Day[t,:] == 1, Kin_Day[t, :]==0))[0]
+                    if len(mc_hold) > 0:
+                        spk['mc'].append(Spk_Day[t, mc_hold, iu])
+                        spk['mc_ix'].append(mc_hold + (t*Kin_Day.shape[1]))
+
+                elif t in ix:
+                    beta_hold = np.nonzero(np.logical_and(Beta_Day[t,:] == 1, Kin_Day[t, :]==0))[0]
+                    if len(beta_hold) > 0:
+                        spk['beta'].append(Spk_Day[t, beta_hold, iu])
+                        spk['bt_ix'].append(beta_hold + (t*Kin_Day.shape[1]) - (ix2[-1]*Kin_Day.shape[1]))
+            
+            mc = np.hstack((spk['mc']))
+            bt = np.hstack((spk['beta']))
+
+            if np.logical_and(np.mean(mc)/.1 > 3, np.mean(bt)/.1 > 3):
+                mc_mn = np.mean(mc)
+                nf_mn = np.mean(bt)
+
+                u, p = scipy.stats.mannwhitneyu(mc, bt)
+                if p < 0.05:
+                    if mc_mn > nf_mn:
+                        ix = 'neg'
+                    elif mc_mn < nf_mn:
+                        ix = 'pos'
+
+                    mc_std = np.std(mc)
+                    distributions_mc[ix].append((mc-mc_mn)/mc_std)
+                    distributions_bt[ix].append((bt-mc_mn)/mc_std)
+
+        pos_mc = np.hstack((distributions_mc['pos']))
+        pos_bt = np.hstack((distributions_bt['pos'])) 
+        day = np.hstack((np.zeros((len(pos_mc))), np.ones((len(pos_bt)))))
+
+        data = {'dat':np.hstack((pos_mc, pos_bt)), 'day': day}
+
+        neg_mc = np.hstack((distributions_mc['neg']))
+        neg_bt = np.hstack((distributions_bt['neg']))
+
+        nbins = 10
+
+        npp, ip = np.histogram(pos_mc, 10)
+        ax.plot((2*i_d) - npp/float(np.sum(npp)), ip[1:]-0.5*(ip[1]-ip[0]), 'b-')
+        npp, ip = np.histogram(pos_bt, 10)
+        ax.plot((2*i_d) - npp/float(np.sum(npp)), ip[1:]-0.5*(ip[1]-ip[0]), 'r-')
+        npp, ip = np.histogram(neg_mc, 10)
+        ax.plot(npp/float(np.sum(npp)) + (2*i_d), ip[1:]-0.5*(ip[1]-ip[0]), 'b-')
+        npp, ip = np.histogram(neg_bt, 10)
+        ax.plot(npp/float(np.sum(npp)) + (2*i_d), ip[1:]-0.5*(ip[1]-ip[0]), 'r-')
+
+        ax[0].plot(mc_st[:, 0], mc_st[:, 1],'.', color=tuple(np.array(cmap[i_d])/255.))
+        ax[1].plot(bt_st[:, 0], bt_st[:, 1],'.', color=tuple(np.array(cmap[i_d])/255.))
+        ax[2].plot(mc_st[:, 0], bt_st[:, 1],'.', color=tuple(np.array(cmap[i_d])/255.))
+        ax[3].plot(mc_st[:, 1], bt_st[:, 0],'.', color=tuple(np.array(cmap[i_d])/255.))
+
+
+        r, x = scipy.stats.pearsonr(mc_st[:, 0], mc_st[:, 1])
+        ax[0].text(5, 5+(i_d)*2, 'r ='+str(r))
+
+        r, x = scipy.stats.pearsonr(bt_st[:, 0], bt_st[:, 1])
+        ax[1].text(5, 5+(i_d)*2, 'r ='+str(r))
+        
+        r, x = scipy.stats.pearsonr(mc_st[:, 0], bt_st[:, 1])
+        ax[2].text(5, 5+(i_d)*2, 'r ='+str(r))
+        
+        r, x = scipy.stats.pearsonr(mc_st[:, 1], bt_st[:, 0])
+        ax[3].text(5, 5+(i_d)*2, 'r ='+str(r))
+        
+
+
+
+        ax.bar(i_d+.1, nsigdiff/float(nunits), .4, color=tuple(np.array(cmap[i_d])/255.))
+        ax.bar(i_d+.5, nsigdiffadj/float(nunits), .4, color=tuple(np.array(cmap[i_d])/255.))
+        # ax.bar(i_d+.5, np.sum(mcnemar_adj[1,:])/np.sum(mcnemar_adj), .2, color=tuple(np.array(cmap[i_d])/255.))
+        # ax.bar(i_d+.7, np.sum(mcnemar_adj[:, 1])/np.sum(mcnemar_adj),.2, color=tuple(np.array(cmap[i_d])/255.))
+        ax.text(i_d+.5, .1+nsigdiff/float(nunits), 'n='+str(nunits), fontsize=16,horizontalalignment='center')
+    ax.set_ylabel('Percent of Units')
+    ax.set_xticks(np.arange(6)+0.5)
+    ax.set_xticklabels(days, rotation='vertical')
+    ax.set_ylim([0, 1.])
+    plt.tight_layout()
+    plt.savefig('/Users/preeyakhanna/Dropbox/Carmena_Lab/Documentation/NeuronPaper/JNeuroDraft/g_perc_sig_diff_FR_beta_vs_NF_hold_beta_events_on_to_targ64_100ms_bins_mcnewar.eps', format='eps', dpi=300)
+
+
 def entropy_phase(train_ix, test_ix, day_bc, Params_day):
     f, ax = plt.subplots()
     f2, ax2 = plt.subplots(ncols=5)
