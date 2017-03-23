@@ -1626,21 +1626,26 @@ def big_plt_analyzed_chosen_pos_neg_vs_unchosen(beta_range = [20, 45]):
             chosen0 = np.array(units[day, 'chosen'])
             unchosen0 = np.array(units[day, 'nonchosen'])            
 
-            wts = np.array([ np.mean(units[day, 'wts'][n][0]) for n in range(len(chosen0)) ])
-            unchosen_neg = chosen0[np.nonzero(wts<0)[0]]
-            chosen_pos = chosen0[np.nonzero(wts>0)[0]]
+            wts_0 = np.array([ np.mean(units[day, 'wts'][n][0]) for n in range(len(chosen0)) ])
+            unchosen_neg = chosen0[np.nonzero(wts_0<0)[0]]
+            chosen_pos = chosen0[np.nonzero(wts_0>0)[0]]
 
             for c, (chosen, unchosen) in enumerate(zip([chosen0, chosen_pos], [unchosen0, unchosen_neg])):
 
-                wts = np.array([ np.mean(units[day, 'wts'][n][0]) for n in range(len(chosen)) ])
-                if c == 0:    
+                wts_master = np.array([ np.mean(units[day, 'wts'][n][0]) for n in range(len(chosen)) ])
+                
+                if c == 0:   
+                    wts = wts_master.copy() 
                     wts_bad =np.array([ np.mean(units[day, 'wts_bad'][n][0]) for n in range(len(unchosen)) ])
                 
                 elif c == 1:
-                    wts_bad = wts[wts<0]
-                    chi = np.nonzero(wts>0)[0]
-                    uchi= np.nonzero(wts <0)[0]
-                    wts = wts[wts >= 0]
+                    wts_bad = wts_master[wts_master<0]
+                    chi = np.nonzero(wts_master >0)[0]
+                    uchi= np.nonzero(wts_master <0)[0]
+                    assert len(chi) == len(chosen_pos)
+                    assert len(uchi) == len(unchosen_neg)
+                    
+                    wts = wts_master[wts_master > 0]
 
                 master_mets[animal][c, 'wt']['chosen'].append(wts)
                 master_mets[animal][c, 'wt']['unchosen'].append(wts_bad)
@@ -1654,6 +1659,7 @@ def big_plt_analyzed_chosen_pos_neg_vs_unchosen(beta_range = [20, 45]):
                 # Mod Idx: Max - Min      
                 comodix = units[day, 'mod_idx']['chosen'][:, 0,  1] - units[day, 'mod_idx']['chosen'][:, 0, 0]
                 nfmodix = units[day, 'mod_idx']['chosen'][:, 1, 1] - units[day,'mod_idx']['chosen'][:, 1, 0]
+
                 if c == 0:
                     master_mets[animal][c, 'mod_co']['chosen'].append(comodix)
                     comodix_unch = units[day, 'mod_idx']['unchosen'][:, 0, 1] - units[day, 'mod_idx']['unchosen'][:, 0, 0]
@@ -1730,11 +1736,11 @@ def big_plt_analyzed_chosen_pos_neg_vs_unchosen(beta_range = [20, 45]):
     return master_mets
 
 def plot_big_plt(master_mets):
-    f, ax = plt.subplots(ncols= 5, nrows=2)
-    Names = ['Log. Reg. Wts', 'Beta-to-FR Slope', 'CO and NF Task Mod.', 'Mean FR', 'Beta Rhymicity']
-    Ylims = [[-0.1, .16], [-.0025, 0.0005], [.004, .012], [0, 16], [-5.5, -5]]
+    f, ax = plt.subplots(ncols= 5, nrows=2, figsize=(20, 5))
+    Ylims = [[-0.1, .2], [-.0025, 0.001], [0, 20], [0, 20], [-5.5, -5]]
+    Ylabs = ['Classifier Wt.', 'Beta-to-FR Slope', 'CO Mod. Idx. (Hz)', 'Mean FR (Hz)', 'Beta Rhythmicity']
     N = [2, 3, 2, 1, 2]
-    for i_s, subj in enumerate(['grom', 'cart']):
+    for i_s, (offs, subj) in enumerate(zip([0, .5],['grom', 'cart'])):
         mm = master_mets[subj]
     
         for ch in range(2):
@@ -1742,20 +1748,25 @@ def plot_big_plt(master_mets):
             for im, met in enumerate(['wt', 'slp', 'mod', 'mn', 'ac']):
 
                 axi = ax[ch, im]
+                
+                if met in ['mn', 'mod']:
+                    fact = 40*40
+                else:
+                    fact = 1
 
                 if met in ['slp', 'mod']:
-
-                    axi.bar(i_s, np.mean(np.hstack((mm[ch, met+'_co']['chosen']))), .3, color='k')
-                    axi.bar(i_s+.3, np.mean(np.hstack((mm[ch, met+'_co']['unchosen']))), .3,color='grey')
+                    x0 = fact*np.hstack((mm[ch, met+'_co']['chosen']))
+                    axi.bar(offs, np.mean(x0), .2, color='k')
+                    
+                    x = fact*np.hstack((mm[ch, met+'_co']['unchosen']))
+                    axi.bar(offs+.2, np.mean(x), .2,color='grey')
                     #axi.bar(i_s+.4, np.mean(np.hstack((mm[ch, met+'_nf']['chosen']))), .2, color='k', edgecolor='white', hatch="o")
                     #axi.bar(i_s+.6, np.mean(np.hstack((mm[ch, met+'_nf']['unchosen']))), .2, color='grey',edgecolor='white', hatch="o")
                     
-                    x = np.hstack((mm[ch, met+'_co']['chosen']))
-                    axi.errorbar(i_s+.15, np.mean(x), 
-                        yerr= np.std(x)/np.sqrt(len(x)),color='k')
+                    axi.errorbar(offs+.1, np.mean(x0), 
+                        yerr= np.std(x0)/np.sqrt(len(x0)),color='k')
                     
-                    x = np.hstack((mm[ch, met+'_co']['unchosen']))
-                    axi.errorbar(i_s+.45, np.mean(x), 
+                    axi.errorbar(offs+.3, np.mean(x), 
                         yerr= np.std(x)/np.sqrt(len(x)),color='grey')
                     
                     # x = np.hstack((mm[ch, met+'_nf']['chosen']))
@@ -1767,25 +1778,29 @@ def plot_big_plt(master_mets):
                     #     yerr= np.std(x)/np.sqrt(len(x)), color='grey')
                     
                 else:
-                    if met == 'mn':
-                        fact = 40*40
-                    else:
-                        fact = 1
                     x = fact*np.hstack((mm[ch, met]['chosen']))
-                    axi.bar(i_s, np.nanmean(x), .3, color='k')
-                    axi.errorbar(i_s+.15, np.nanmean(x),
+                    axi.bar(offs, np.nanmean(x), .2, color='k')
+                    axi.errorbar(offs+.1, np.nanmean(x),
                         yerr=np.nanstd(x)/np.sqrt(len(x)), color='k')
+                    x0 = x.copy()
 
                     x = fact*np.hstack((mm[ch, met]['unchosen']))
-                    axi.bar(i_s+.4, np.nanmean(x), .3, color='grey')
-                    axi.errorbar(i_s+.55, np.nanmean(x),
+                    axi.bar(offs+.2, np.nanmean(x), .2, color='grey')
+                    axi.errorbar(offs+.3, np.nanmean(x),
                         yerr = np.nanstd(x)/np.sqrt(len(x)), color='grey')
 
-                axi.set_title(Names[im])
+                u, p = scipy.stats.kruskal(x, x0)
+                print subj, ', 0) ch-unch, 1) chpos-chneg: ', ch, ', metric: ', met, ', KW: ', u, p, len(x), len(x0)
+
+                axi.set_ylabel(Ylabs[im])
                 axi.set_ylim(Ylims[im])
                 axi.set_yticks(np.linspace(Ylims[im][0], Ylims[im][1], 4).round(N[im]))
                 axi.set_xticks([])
-                axi.set_xlim([-.4, 2.])
+                axi.set_xlim([-.1, 1])
+    plt.tight_layout()
+    #plt.savefig('fig8_maybe.eps', format='eps', dpi=300)
+    plt.show()
+
 
 def fft_simple(X):
     # Input X is units x timepoints
